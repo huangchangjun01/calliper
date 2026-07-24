@@ -3,8 +3,8 @@ package services
 import (
 	"context"
 	"fmt"
+	"log"
 	"math"
-	"math/rand"
 	"sort"
 	"time"
 
@@ -101,9 +101,9 @@ func (s *EvaluationService) EvaluateDaily(ctx context.Context) error {
 		}
 	}
 
-	// Use mock data when no DB or no records
 	if len(predictions) == 0 {
-		predictions = s.mockPredictions(startOfDay)
+		log.Printf("[Evaluation] No predictions found for %s, skipping evaluation", yesterday.Format("2006-01-02"))
+		return nil
 	}
 
 	// 2. 获取昨日实际行情数据
@@ -164,20 +164,19 @@ func (s *EvaluationService) directionFromChange(change float64) string {
 }
 
 // getActualChange retrieves yesterday's price change for a stock.
-// Falls back to mock data when database is unavailable.
 func (s *EvaluationService) getActualChange(ctx context.Context, stockID uint, start, end time.Time) float64 {
-	if s.tsdb != nil {
-		var daily models.StockPriceDaily
-		err := s.tsdb.WithContext(ctx).
-			Where("stock_id = ? AND time >= ? AND time < ?", stockID, start, end).
-			Order("time DESC").
-			First(&daily).Error
-		if err == nil && daily.Close > 0 && daily.Open > 0 {
-			return (daily.Close - daily.Open) / daily.Open * 100
-		}
+	if s.tsdb == nil {
+		return 0
 	}
-	// mock: random change between -5% and +5%
-	return (rand.Float64()*10 - 5)
+	var daily models.StockPriceDaily
+	err := s.tsdb.WithContext(ctx).
+		Where("stock_id = ? AND time >= ? AND time < ?", stockID, start, end).
+		Order("time DESC").
+		First(&daily).Error
+	if err == nil && daily.Close > 0 && daily.Open > 0 {
+		return (daily.Close - daily.Open) / daily.Open * 100
+	}
+	return 0
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -228,26 +227,18 @@ func (s *EvaluationService) GetAccuracyStats(symbol string) (*AccuracyStats, err
 
 	// Aggregate stats
 	var aggCorrect7d, aggTotal7d, aggCorrect30d, aggTotal30d, aggCorrectTotal, aggTotalTotal int
-	for _, ps := range stats.ByPeriod {
-		aggTotal7d += ps.TotalCount
-		aggTotal30d += ps.TotalCount
-		aggTotalTotal += ps.TotalCount
-		// Use per-period totals for aggregate
-	}
 	if s.db != nil {
 		for _, period := range periods {
 			c7, t7 := s.countAccuracy(stock.ID, period, sevenDaysAgo, now)
 			aggCorrect7d += c7
 			aggTotal7d += t7
+			c30, t30 := s.countAccuracy(stock.ID, period, thirtyDaysAgo, now)
+			aggCorrect30d += c30
+			aggTotal30d += t30
+			cTotal, tTotal := s.countAccuracy(stock.ID, period, time.Time{}, now)
+			aggCorrectTotal += cTotal
+			aggTotalTotal += tTotal
 		}
-	} else {
-		// mock data
-		aggCorrect7d = 12
-		aggTotal7d = 20
-		aggCorrect30d = 45
-		aggTotal30d = 75
-		aggCorrectTotal = 120
-		aggTotalTotal = 200
 	}
 
 	if aggTotal7d > 0 {
@@ -266,13 +257,7 @@ func (s *EvaluationService) GetAccuracyStats(symbol string) (*AccuracyStats, err
 // countAccuracy counts correct and total predictions for a stock/period/time range.
 func (s *EvaluationService) countAccuracy(stockID uint, period string, since, until time.Time) (correct, total int) {
 	if s.db == nil {
-		// mock data
-		if period == "short" {
-			return 8, 12
-		} else if period == "medium" {
-			return 6, 10
-		}
-		return 4, 8
+		return 0, 0
 	}
 
 	var accuracies []models.PredictionAccuracy
@@ -301,7 +286,7 @@ func (s *EvaluationService) countAccuracy(stockID uint, period string, since, un
 // GetAccuracyRanking returns stocks ranked by prediction accuracy.
 func (s *EvaluationService) GetAccuracyRanking(period string, limit int) ([]StockAccuracy, error) {
 	if s.db == nil {
-		return s.mockRanking(limit), nil
+		return nil, fmt.Errorf("database not available")
 	}
 
 	var stocks []models.Stock
@@ -359,13 +344,13 @@ func (s *EvaluationService) GetAccuracyRanking(period string, limit int) ([]Stoc
 // trading portfolio over a benchmark (market index).
 func (s *EvaluationService) CalculateExcessReturn(symbol string, period string) (float64, error) {
 	if s.db == nil {
-		return s.mockExcessReturn(symbol, period), nil
+		return 0, fmt.Errorf("database not available")
 	}
 
 	// Use simulated trades to compute cumulative return
 	trades, err := s.getSimulatedTrades(symbol)
 	if err != nil {
-		return s.mockExcessReturn(symbol, period), nil
+		return 0, fmt.Errorf("failed to get simulated trades: %w", err)
 	}
 
 	portfolioReturn := s.computePortfolioReturn(trades)
@@ -384,9 +369,15 @@ func (s *EvaluationService) computePortfolioReturn(trades []models.SimulatedTrad
 	for _, t := range trades {
 		cost := t.Price * float64(t.Quantity)
 		totalCost += cost
-		// Simplified: assume we can get current price from DB
-		// Mock: use a random profit factor
-		totalPL += cost * (rand.Float64()*0.1 - 0.02)
+		// Calculate P&L based on current price from DB
+		currentPrice := s.getCurrentPriceFromDB(t.StockID)
+		if currentPrice > 0 {
+			if t.TradeType == "buy" {
+				totalPL += (currentPrice - t.Price) * float64(t.Quantity)
+			} else if t.TradeType == "sell" {
+				totalPL += (t.Price - currentPrice) * float64(t.Quantity)
+			}
+		}
 	}
 	if totalCost == 0 {
 		return 0
@@ -394,19 +385,62 @@ func (s *EvaluationService) computePortfolioReturn(trades []models.SimulatedTrad
 	return totalPL / totalCost * 100
 }
 
+// getCurrentPriceFromDB gets the latest price for a stock from the database.
+func (s *EvaluationService) getCurrentPriceFromDB(stockID uint) float64 {
+	if s.tsdb == nil {
+		return 0
+	}
+	var daily models.StockPriceDaily
+	if err := s.tsdb.Where("stock_id = ?", stockID).
+		Order("time DESC").
+		First(&daily).Error; err != nil {
+		return 0
+	}
+	return daily.Close
+}
+
 // getBenchmarkReturn returns benchmark index return for the period.
 func (s *EvaluationService) getBenchmarkReturn(period string) float64 {
-	// Mock: use typical market returns
+	// Compute benchmark return from actual market index data
+	if s.tsdb == nil {
+		return 0
+	}
+
+	now := time.Now()
+	var daysBack int
 	switch period {
 	case "short":
-		return 0.5
+		daysBack = 7
 	case "medium":
-		return 2.0
+		daysBack = 30
 	case "long":
-		return 5.0
+		daysBack = 90
 	default:
-		return 0.5
+		daysBack = 7
 	}
+
+	start := now.AddDate(0, 0, -daysBack)
+
+	// Try to get SSE Composite Index (000001) as benchmark
+	var daily models.StockPriceDaily
+	err := s.tsdb.Where("stock_id = (SELECT id FROM stocks WHERE symbol = '000001' LIMIT 1)").
+		Where("time >= ? AND time <= ?", start, now).
+		Order("time ASC").
+		First(&daily).Error
+	if err != nil {
+		return 0
+	}
+
+	var latest models.StockPriceDaily
+	err = s.tsdb.Where("stock_id = (SELECT id FROM stocks WHERE symbol = '000001' LIMIT 1)").
+		Where("time >= ? AND time <= ?", start, now).
+		Order("time DESC").
+		First(&latest).Error
+	if err != nil || daily.Close == 0 {
+		return 0
+	}
+
+	return (latest.Close - daily.Close) / daily.Close * 100
 }
 
 // getSimulatedTrades fetches simulated trades for a symbol.
@@ -452,12 +486,12 @@ func (s *EvaluationService) CalculateSharpeRatio(symbol string) (float64, error)
 // getDailyReturns returns daily portfolio returns.
 func (s *EvaluationService) getDailyReturns(symbol string) []float64 {
 	if s.db == nil || s.tsdb == nil {
-		return s.mockDailyReturns(symbol)
+		return nil
 	}
 
 	var stock models.Stock
 	if err := s.db.Where("symbol = ?", symbol).First(&stock).Error; err != nil {
-		return s.mockDailyReturns(symbol)
+		return nil
 	}
 
 	var dailies []models.StockPriceDaily
@@ -467,7 +501,7 @@ func (s *EvaluationService) getDailyReturns(symbol string) []float64 {
 		Find(&dailies)
 
 	if len(dailies) < 2 {
-		return s.mockDailyReturns(symbol)
+		return nil
 	}
 
 	var returns []float64
@@ -573,30 +607,60 @@ func (s *EvaluationService) AnalyzeFailure(symbol string, predictionID uint) (*F
 
 // isNearEarningsDate checks if the date is near earnings season.
 func (s *EvaluationService) isNearEarningsDate(symbol string) bool {
-	// Mock: check if current month is in typical earnings months
+	// Check if within typical earnings season months
 	now := time.Now()
 	month := now.Month()
-	return month >= time.March && month <= time.May || month >= time.August && month <= time.November
+	// A-share earnings seasons: Jan-Apr (annual report), Jul-Aug (semi-annual), Oct (Q3)
+	return month >= time.January && month <= time.April ||
+		month >= time.July && month <= time.August ||
+		month == time.October
 }
 
 // hasIndustryAnomaly checks if the industry index moved > 3%.
 func (s *EvaluationService) hasIndustryAnomaly(symbol string) bool {
-	// Mock: random check
-	return rand.Float64() < 0.3
+	if s.tsdb == nil {
+		return false
+	}
+
+	var stock models.Stock
+	if s.db == nil {
+		return false
+	}
+	if err := s.db.Where("symbol = ?", symbol).First(&stock).Error; err != nil {
+		return false
+	}
+
+	// Check if the industry index has moved > 3% recently
+	now := time.Now()
+	start := now.AddDate(0, 0, -1)
+
+	var daily models.StockPriceDaily
+	if err := s.tsdb.Where("stock_id = ?", stock.ID).
+		Where("time >= ? AND time <= ?", start, now).
+		Order("time DESC").
+		First(&daily).Error; err != nil {
+		return false
+	}
+
+	if daily.Open > 0 {
+		change := math.Abs((daily.Close - daily.Open) / daily.Open * 100)
+		return change > 3.0
+	}
+	return false
 }
 
 // hasVolumeAnomaly checks if volume is > 3x average.
 func (s *EvaluationService) hasVolumeAnomaly(symbol string) bool {
 	if s.tsdb == nil {
-		return rand.Float64() < 0.2
+		return false
 	}
 
 	var stock models.Stock
 	if s.db == nil {
-		return rand.Float64() < 0.2
+		return false
 	}
 	if err := s.db.Where("symbol = ?", symbol).First(&stock).Error; err != nil {
-		return rand.Float64() < 0.2
+		return false
 	}
 
 	// Get average volume over last 20 days
@@ -648,67 +712,6 @@ func (s *EvaluationService) GetMetrics(symbol string) (*EvaluationMetrics, error
 		SharpeRatio:  sharpe,
 		MaxDrawdown:  maxDD,
 	}, nil
-}
-
-// ──────────────────────────────────────────────────────────────
-// Mock data helpers
-// ──────────────────────────────────────────────────────────────
-
-func (s *EvaluationService) mockPredictions(startOfDay time.Time) []models.Prediction {
-	predictions := make([]models.Prediction, 0, 10)
-	directions := []string{"bullish", "bearish", "neutral"}
-	periods := []string{"short", "medium", "long"}
-
-	for i := 0; i < 5; i++ {
-		predictions = append(predictions, models.Prediction{
-			ID:          uint(i + 1),
-			StockID:     uint(i + 1),
-			Direction:   directions[i%3],
-			Period:      periods[i%3],
-			Confidence:  float64(60 + rand.Intn(35)),
-			PredictedAt: startOfDay,
-		})
-	}
-	return predictions
-}
-
-func (s *EvaluationService) mockRanking(limit int) []StockAccuracy {
-	rankings := []StockAccuracy{
-		{Symbol: "AAPL", Accuracy: 72.5, TotalPredictions: 40},
-		{Symbol: "GOOGL", Accuracy: 68.3, TotalPredictions: 38},
-		{Symbol: "600519", Accuracy: 65.0, TotalPredictions: 35},
-		{Symbol: "TSLA", Accuracy: 62.8, TotalPredictions: 42},
-		{Symbol: "000001", Accuracy: 60.5, TotalPredictions: 30},
-		{Symbol: "MSFT", Accuracy: 58.2, TotalPredictions: 36},
-		{Symbol: "AMZN", Accuracy: 55.0, TotalPredictions: 32},
-		{Symbol: "000858", Accuracy: 52.7, TotalPredictions: 28},
-	}
-	if limit > 0 && len(rankings) > limit {
-		rankings = rankings[:limit]
-	}
-	return rankings
-}
-
-func (s *EvaluationService) mockExcessReturn(symbol string, period string) float64 {
-	base := rand.Float64()*5 - 1
-	switch period {
-	case "short":
-		base = rand.Float64()*2 - 0.5
-	case "medium":
-		base = rand.Float64()*4 - 1
-	case "long":
-		base = rand.Float64()*8 - 2
-	}
-	return math.Round(base*100) / 100
-}
-
-func (s *EvaluationService) mockDailyReturns(symbol string) []float64 {
-	n := 100 + rand.Intn(152)
-	returns := make([]float64, n)
-	for i := range returns {
-		returns[i] = (rand.Float64()*6 - 3) / 100
-	}
-	return returns
 }
 
 // ──────────────────────────────────────────────────────────────

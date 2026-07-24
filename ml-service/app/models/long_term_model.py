@@ -111,36 +111,20 @@ class LongTermPredictor:
         ).to(self.device)
         self.input_size = input_size
 
-    def _generate_mock_data(self, num_samples=300, seq_len=52):
-        """生成 mock 训练数据（52 周约 1 年）"""
-        X = np.random.randn(num_samples, seq_len, self.input_size).astype(np.float32)
-        y = np.zeros(num_samples, dtype=np.int64)
-        for i in range(num_samples):
-            # 用全序列趋势模拟标签
-            first_half = X[i, :seq_len//2, 0].mean()
-            second_half = X[i, seq_len//2:, 0].mean()
-            trend = second_half - first_half
-            if trend > 0.15:
-                y[i] = 2
-            elif trend < -0.15:
-                y[i] = 0
-            else:
-                y[i] = 1
-        return X, y
+    def train(self, df, y, epochs=50, batch_size=16, lr=0.0005):
+        """训练模型。df: 特征数据 (DataFrame 或 numpy array), y: 标签数据 (numpy array)"""
+        if df is None or y is None:
+            raise ValueError("训练数据不能为空，必须提供真实市场数据")
 
-    def train(self, df=None, epochs=50, batch_size=16, lr=0.0005):
-        """训练模型。df 为 None 时使用 mock 数据，支持 DataFrame 或 numpy array"""
-        if df is not None:
-            if hasattr(df, "values"):
-                X = df.values.astype(np.float32)
-            else:
-                X = np.asarray(df, dtype=np.float32)
-            if X.ndim == 2:
-                seq_len = X.shape[0]
-                X = X.reshape(-1, seq_len, X.shape[1])
-            y = np.random.randint(0, 3, len(X))
+        if hasattr(df, "values"):
+            X = df.values.astype(np.float32)
         else:
-            X, y = self._generate_mock_data()
+            X = np.asarray(df, dtype=np.float32)
+
+        y = np.asarray(y, dtype=np.int64)
+        if X.ndim == 2:
+            seq_len = X.shape[0]
+            X = X.reshape(-1, seq_len, X.shape[1])
 
         X_tensor = torch.tensor(X, dtype=torch.float32).to(self.device)
         y_tensor = torch.tensor(y, dtype=torch.long).to(self.device)
@@ -167,20 +151,20 @@ class LongTermPredictor:
                 avg_loss = total_loss / len(loader)
                 print(f"[LongTerm] Epoch {epoch+1}/{epochs} - Loss: {avg_loss:.4f}")
 
-    def predict(self, df=None):
-        """预测。df 为 None 时使用 mock 数据，支持 DataFrame 或 numpy array"""
+    def predict(self, df, current_price=None):
+        """预测。df: 特征数据 (DataFrame 或 numpy array), current_price: 当前价格"""
+        if df is None:
+            raise ValueError("预测数据不能为空，必须提供真实市场数据")
+
         self.model.eval()
-        if df is not None:
-            if hasattr(df, "values"):
-                X = df.values.astype(np.float32)
-            else:
-                X = np.asarray(df, dtype=np.float32)
-            if X.ndim == 2:
-                X = X.reshape(1, X.shape[0], X.shape[1])
-            elif X.ndim == 3:
-                pass
+        if hasattr(df, "values"):
+            X = df.values.astype(np.float32)
         else:
-            X = np.random.randn(1, 52, self.input_size).astype(np.float32)
+            X = np.asarray(df, dtype=np.float32)
+        if X.ndim == 2:
+            X = X.reshape(1, X.shape[0], X.shape[1])
+        elif X.ndim == 3:
+            pass
 
         X_tensor = torch.tensor(X, dtype=torch.float32).to(self.device)
         with torch.no_grad():
@@ -190,8 +174,9 @@ class LongTermPredictor:
         predictions = probs.argmax(axis=-1)
         confidences = probs.max(axis=-1)
 
-        # 模拟月度目标价位
-        current_price = 100.0
+        # 基于真实当前价格计算月度目标价位
+        if current_price is None:
+            current_price = self._get_current_price_from_data(df)
         target_price_map = {0: current_price * 0.90, 1: current_price * 1.02, 2: current_price * 1.15}
 
         results = []
@@ -206,6 +191,20 @@ class LongTermPredictor:
                 },
             })
         return results
+
+    def _get_current_price_from_data(self, df):
+        """从特征数据中提取当前价格"""
+        if hasattr(df, "columns") and "close" in df.columns:
+            return float(df["close"].iloc[-1])
+        if hasattr(df, "values"):
+            arr = df.values
+        else:
+            arr = np.asarray(df)
+        if arr.ndim == 3:
+            arr = arr[0]
+        if arr.ndim == 2:
+            return float(arr[-1, -1]) if arr.shape[1] > 0 else 100.0
+        return 100.0
 
     def save(self, path):
         """保存模型到文件"""
@@ -230,10 +229,28 @@ class LongTermPredictor:
 # ──────────────────────────────────────────────
 
 if __name__ == "__main__":
+    import pandas as pd
     predictor = LongTermPredictor()
-    print("Training with mock data...")
-    predictor.train(epochs=20)
-    results = predictor.predict()
+    dates = pd.date_range("2024-01-01", periods=60, freq="W")
+    df = pd.DataFrame({
+        "open":  100 + np.cumsum(np.random.randn(60) * 0.5),
+        "high":  100 + np.cumsum(np.random.randn(60) * 0.5) + 1,
+        "low":   100 + np.cumsum(np.random.randn(60) * 0.5) - 1,
+        "close": 100 + np.cumsum(np.random.randn(60) * 0.5),
+        "volume": np.random.randint(1000000, 10000000, 60),
+    }, index=dates)
+    y = np.zeros(60, dtype=np.int64)
+    for i in range(30, 60):
+        trend = df["close"].iloc[i] - df["close"].iloc[i-13]
+        if trend > 2.0:
+            y[i] = 2
+        elif trend < -2.0:
+            y[i] = 0
+        else:
+            y[i] = 1
+    print("Training with real-format data...")
+    predictor.train(df, y, epochs=20)
+    results = predictor.predict(df)
     print("Prediction results:", results)
     predictor.save("/tmp/long_term_model.pt")
     print("Model saved.")

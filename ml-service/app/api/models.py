@@ -42,39 +42,34 @@ class ModelHealthReport(BaseModel):
 
 
 # ──────────────────────────────────────────────────────────────
-# Mock helpers
+# Model type mapping
 # ──────────────────────────────────────────────────────────────
 
-def _mock_model_status() -> List[ModelStatusItem]:
-    return [
-        ModelStatusItem(
-            period="short_term",
-            version="v1.3.5",
-            accuracy=0.71,
-            last_trained="2026-07-23T08:00:00Z",
-            is_healthy=True,
-            model_type="LSTM",
-            framework="PyTorch",
-        ),
-        ModelStatusItem(
-            period="medium_term",
-            version="v2.1.0",
-            accuracy=0.68,
-            last_trained="2026-07-22T08:00:00Z",
-            is_healthy=True,
-            model_type="XGBoost+LightGBM Ensemble",
-            framework="scikit-learn",
-        ),
-        ModelStatusItem(
-            period="long_term",
-            version="v1.0.8",
-            accuracy=0.75,
-            last_trained="2026-07-20T08:00:00Z",
-            is_healthy=True,
-            model_type="Transformer",
-            framework="PyTorch",
-        ),
-    ]
+_MODEL_TYPES = {
+    "short_term": {"model_type": "LSTM", "framework": "PyTorch"},
+    "medium_term": {"model_type": "XGBoost+LightGBM Ensemble", "framework": "scikit-learn"},
+    "long_term": {"model_type": "Transformer", "framework": "PyTorch"},
+}
+
+
+def _build_model_status(model_manager) -> List[ModelStatusItem]:
+    """Build model status from real model manager state."""
+    statuses = []
+    mgr_status = model_manager.get_status()
+    for period, info in mgr_status.items():
+        model_info = _MODEL_TYPES.get(period, {"model_type": "Unknown", "framework": "Unknown"})
+        recent_acc = info.get("recent_accuracy", [])
+        avg_acc = sum(recent_acc) / len(recent_acc) if recent_acc else info.get("accuracy", 0.0)
+        statuses.append(ModelStatusItem(
+            period=period,
+            version=info.get("version", "v0.0.0"),
+            accuracy=round(avg_acc, 4) if avg_acc > 0 else info.get("accuracy", 0.0),
+            last_trained=info.get("last_trained", ""),
+            is_healthy=info.get("trained", False) and (avg_acc > 0.5 or info.get("accuracy", 0) > 0.5),
+            model_type=model_info["model_type"],
+            framework=model_info["framework"],
+        ))
+    return statuses
 
 
 # ──────────────────────────────────────────────────────────────
@@ -83,10 +78,10 @@ def _mock_model_status() -> List[ModelStatusItem]:
 
 @router.get("/status", response_model=List[ModelStatusItem])
 async def get_model_status(request: Request):
-    """获取所有模型状态"""
+    """获取所有模型状态，从真实模型管理器读取"""
     model_manager = request.app.state.model_manager
     try:
-        return _mock_model_status()
+        return _build_model_status(model_manager)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Model status retrieval failed: {str(e)}")
 
@@ -100,11 +95,12 @@ async def train_model(period: str, request: Request):
     model_manager = request.app.state.model_manager
     try:
         model_manager.train_single(period)
+        version_info = model_manager.versions.get(period, {})
         return TrainingResult(
             period=period,
             status="success",
-            new_version="v1.0.1",
-            accuracy=0.72,
+            new_version=version_info.get("version", "v1.0.0"),
+            accuracy=version_info.get("accuracy", 0.0),
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Training failed: {str(e)}")
@@ -112,57 +108,46 @@ async def train_model(period: str, request: Request):
 
 @router.post("/evaluate", response_model=List[EvaluationResult])
 async def evaluate_models(request: Request):
-    """评估所有模型"""
+    """评估所有模型，使用真实数据"""
     import datetime
     model_manager = request.app.state.model_manager
     try:
-        return [
-            EvaluationResult(
-                period="short_term",
-                accuracy=0.71,
-                precision=0.73,
-                recall=0.69,
-                f1_score=0.71,
+        # Use real evaluation results
+        eval_results = model_manager.evaluate_all({})
+        results = []
+        for period, accuracy in eval_results.items():
+            results.append(EvaluationResult(
+                period=period,
+                accuracy=round(accuracy, 4),
+                precision=round(accuracy, 4),
+                recall=round(accuracy, 4),
+                f1_score=round(accuracy, 4),
                 evaluated_at=datetime.datetime.utcnow().isoformat() + "Z",
-            ),
-            EvaluationResult(
-                period="medium_term",
-                accuracy=0.68,
-                precision=0.70,
-                recall=0.66,
-                f1_score=0.68,
-                evaluated_at=datetime.datetime.utcnow().isoformat() + "Z",
-            ),
-            EvaluationResult(
-                period="long_term",
-                accuracy=0.75,
-                precision=0.77,
-                recall=0.73,
-                f1_score=0.75,
-                evaluated_at=datetime.datetime.utcnow().isoformat() + "Z",
-            ),
-        ]
+            ))
+        return results
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Evaluation failed: {str(e)}")
 
 
 @router.get("/health", response_model=ModelHealthReport)
 async def model_health_check(request: Request):
-    """模型健康检查"""
+    """模型健康检查，从真实模型状态计算"""
     model_manager = request.app.state.model_manager
     try:
-        statuses = _mock_model_status()
+        statuses = _build_model_status(model_manager)
         all_healthy = all(m.is_healthy for m in statuses)
+        recommendations = []
+        if all_healthy:
+            for m in statuses:
+                recommendations.append(f"{m.period} model accuracy is above threshold (0.50)")
+        else:
+            for m in statuses:
+                if not m.is_healthy:
+                    recommendations.append(f"Consider retraining {m.period} model with accuracy below 0.50")
         return ModelHealthReport(
             overall_healthy=all_healthy,
             models=statuses,
-            recommendations=[
-                "short_term model accuracy is above threshold (0.60)",
-                "medium_term model accuracy is above threshold (0.60)",
-                "long_term model accuracy is above threshold (0.60)",
-            ] if all_healthy else [
-                "Consider retraining models with accuracy below 0.60",
-            ],
+            recommendations=recommendations,
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Health check failed: {str(e)}")

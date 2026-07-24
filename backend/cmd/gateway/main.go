@@ -127,7 +127,7 @@ func main() {
 	router.GET("/ws", wsHandler.HandleWebSocket)
 
 	// Initialize trading components
-	mockBroker := services.NewMockBroker()
+	mockBroker := services.NewMockBroker(db)
 	tradeService := services.NewTradeService(db, mockBroker, rdb)
 	tradeHandler := handlers.NewTradeHandler(tradeService)
 
@@ -164,8 +164,11 @@ func main() {
 	// Start evaluation scheduler
 	evaluationScheduler.Start(bgCtx)
 
+	// Initialize admin handler
+	adminHandler := handlers.NewAdminHandler(db)
+
 	// Initialize handlers
-	authHandler := handlers.NewAuthHandler(cfg.JWTSecret, cfg.JWTExpiration)
+	authHandler := handlers.NewAuthHandler(cfg.JWTSecret, cfg.JWTExpiration, db)
 	stockHandler := handlers.NewStockHandler(stockService)
 	marketHandler := handlers.NewMarketHandler(marketService)
 	var watchlistHandler *handlers.WatchlistHandler
@@ -266,11 +269,11 @@ func main() {
 		admin.Use(middleware.AuthMiddleware(cfg.JWTSecret))
 		admin.Use(middleware.AdminMiddleware())
 		{
-			admin.GET("/users", placeholderHandler("list users"))
-			admin.GET("/users/:id", placeholderHandler("get user detail"))
-			admin.PUT("/users/:id", placeholderHandler("update user"))
-			admin.GET("/audit-log", placeholderHandler("list audit logs"))
-			admin.GET("/system/status", placeholderHandler("get system status"))
+			admin.GET("/users", adminHandler.ListUsers)
+			admin.GET("/users/:id", adminHandler.GetUser)
+			admin.PUT("/users/:id", adminHandler.UpdateUser)
+			admin.GET("/audit-log", adminHandler.ListAuditLogs)
+			admin.GET("/system/status", adminHandler.GetSystemStatus)
 			admin.POST("/predictions/run", predictionHandler.TriggerPrediction)
 			admin.GET("/models/status", predictionHandler.GetModelStatus)
 			admin.POST("/evaluation/run", evaluationHandler.RunEvaluation)
@@ -316,16 +319,6 @@ func main() {
 	database.Close()
 
 	log.Println("API Gateway stopped")
-}
-
-// placeholderHandler returns a simple placeholder JSON response.
-func placeholderHandler(name string) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{
-			"message": fmt.Sprintf("placeholder: %s", name),
-			"status":  "not_implemented",
-		})
-	}
 }
 
 // getEnvDefault returns the environment variable value or a default.

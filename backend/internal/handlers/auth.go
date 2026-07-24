@@ -1,23 +1,31 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
+	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
+
 	"github.com/quant-trading/backend/internal/middleware"
+	"github.com/quant-trading/backend/internal/models"
 )
 
 // AuthHandler handles authentication-related requests.
 type AuthHandler struct {
-	JWTSecret       string
-	JWTExpiration   int
+	JWTSecret     string
+	JWTExpiration int
+	DB            *gorm.DB
 }
 
 // NewAuthHandler creates a new AuthHandler.
-func NewAuthHandler(secret string, expiration int) *AuthHandler {
+func NewAuthHandler(secret string, expiration int, db *gorm.DB) *AuthHandler {
 	return &AuthHandler{
 		JWTSecret:     secret,
 		JWTExpiration: expiration,
+		DB:            db,
 	}
 }
 
@@ -42,21 +50,30 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	// TODO: Replace with actual user authentication against database
-	userID := "placeholder-user-id"
-	role := "user"
-
-	token, err := middleware.GenerateToken(userID, role, h.JWTSecret, h.JWTExpiration)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate token"})
+	// Authenticate against database
+	if h.DB != nil {
+		var user models.User
+		if err := h.DB.Where("username = ? AND is_active = ?", req.Username, true).First(&user).Error; err == nil {
+			if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); err == nil {
+				userID := strconv.FormatUint(uint64(user.ID), 10)
+				token, err := middleware.GenerateToken(userID, user.Role, h.JWTSecret, h.JWTExpiration)
+				if err != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate token"})
+					return
+				}
+				c.JSON(http.StatusOK, LoginResponse{
+					Token:  token,
+					UserID: userID,
+					Role:   user.Role,
+				})
+				return
+			}
+		}
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid username or password"})
 		return
 	}
 
-	c.JSON(http.StatusOK, LoginResponse{
-		Token:  token,
-		UserID: userID,
-		Role:   role,
-	})
+	c.JSON(http.StatusServiceUnavailable, gin.H{"error": "authentication service unavailable"})
 }
 
 // RegisterRequest represents a registration request body.
@@ -80,37 +97,42 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
-	// TODO: Replace with actual user registration in database
-	userID := "placeholder-new-user-id"
+	if h.DB == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "database unavailable"})
+		return
+	}
 
+	// Check if user already exists
+	var existing models.User
+	if err := h.DB.Where("username = ? OR email = ?", req.Username, req.Email).First(&existing).Error; err == nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "username or email already exists"})
+		return
+	}
+
+	// Hash password
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to process password"})
+		return
+	}
+
+	// Create user
+	user := models.User{
+		Username:     req.Username,
+		Email:        req.Email,
+		PasswordHash: string(hashedPassword),
+		Role:         "user",
+		IsActive:     true,
+	}
+
+	if err := h.DB.Create(&user).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to create user: %v", err)})
+		return
+	}
+
+	userID := strconv.FormatUint(uint64(user.ID), 10)
 	c.JSON(http.StatusCreated, RegisterResponse{
 		UserID:  userID,
 		Message: "user registered successfully",
-	})
-}
-
-// RefreshTokenResponse represents a token refresh response.
-type RefreshTokenResponse struct {
-	Token string `json:"token"`
-}
-
-// RefreshToken handles JWT token refresh.
-func (h *AuthHandler) RefreshToken(c *gin.Context) {
-	userID := middleware.GetUserID(c)
-	role := middleware.GetUserRole(c)
-
-	if userID == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
-		return
-	}
-
-	token, err := middleware.GenerateToken(userID, role, h.JWTSecret, h.JWTExpiration)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to refresh token"})
-		return
-	}
-
-	c.JSON(http.StatusOK, RefreshTokenResponse{
-		Token: token,
 	})
 }

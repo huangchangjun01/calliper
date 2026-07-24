@@ -294,9 +294,7 @@ class TechnicalPredictor:
 
         # 汇总信号
         total_score = sum(scores)
-        # 添加随机噪声模拟市场不确定性
-        noise = random.gauss(0, 0.05)
-        total_score += noise
+        # 不添加随机噪声，使用纯技术分析信号
 
         # 转换为预测
         if total_score > 0.05:
@@ -743,68 +741,47 @@ def main():
               f"[{s.get('market', 'N/A'):6s}]")
     print()
 
-    # 模拟多日交易
-    for day in range(SIMULATION_DAYS):
-        print(f"\n{'='*40}")
-        print(f"第 {day + 1} 天交易")
-        print(f"{'='*40}")
+    # 使用真实数据执行单日交易
+    print(f"\n{'='*40}")
+    print(f"基于真实行情执行交易")
+    print(f"{'='*40}")
 
-        # 基于真实价格生成当日数据（模拟多日波动）
-        day_data = []
-        for base in base_data:
-            # 模拟每日波动 (-3% to +3%)
-            daily_change = base.get("change_pct", 0) * 0.1 + random.gauss(0, 1.5)
-            new_price = round(base["price"] * (1 + daily_change / 100), 2)
-            if new_price <= 0:
-                new_price = base["price"]
+    # 使用真实行情数据
+    day_data = base_data
+    all_stock_data.append(day_data)
 
-            day_data.append({
-                **base,
-                "price": new_price,
-                "change_pct": daily_change,
-                "open": round(new_price * (1 - random.uniform(0, 0.005)), 2),
-                "high": round(new_price * (1 + random.uniform(0, 0.01)), 2),
-                "low": round(new_price * (1 - random.uniform(0, 0.01)), 2),
-            })
-        all_stock_data.append(day_data)
+    # 生成预测
+    predictions = []
+    for stock in day_data:
+        for period in ["short", "medium", "long"]:
+            pred = predictor.predict(stock, period)
+            predictions.append(pred)
 
-        # 生成预测
-        predictions = []
-        for stock in day_data:
-            for period in ["short", "medium", "long"]:
-                pred = predictor.predict(stock, period)
-                predictions.append(pred)
+    # 执行交易
+    engine.execute_trades(predictions, STOCK_POOL, 0)
 
-        # 执行交易
-        engine.execute_trades(predictions, STOCK_POOL, day)
+    # 日终结算
+    day_pnl = engine.settle_day(day_data)
+    print(f"    日终结算: PnL=¥{day_pnl:+,.2f}, 总资产=¥{engine.total_assets:,.2f}")
 
-        # 日终结算
-        day_pnl = engine.settle_day(day_data)
-        print(f"    日终结算: PnL=¥{day_pnl:+,.2f}, 总资产=¥{engine.total_assets:,.2f}")
+    # 追踪预测准确率（基于当日实际涨跌）
+    for stock in day_data:
+        actual_direction = "neutral"
+        if stock["change_pct"] > 0.3:
+            actual_direction = "up"
+        elif stock["change_pct"] < -0.3:
+            actual_direction = "down"
 
-        # 追踪预测准确率（基于当日实际涨跌）
-        for stock in day_data:
-            actual_direction = "neutral"
-            if stock["change_pct"] > 0.3:
-                actual_direction = "up"
-            elif stock["change_pct"] < -0.3:
-                actual_direction = "down"
-
-            for pred in predictions:
-                if pred["symbol"] == stock["code"]:
-                    tracker.log_prediction(pred, actual_direction)
-
-        # 交易间隔
-        if day < SIMULATION_DAYS - 1:
-            print("    等待下一交易日...")
-            time.sleep(1)
+        for pred in predictions:
+            if pred["symbol"] == stock["code"]:
+                tracker.log_prediction(pred, actual_direction)
 
     # 生成报告
     metrics = engine.get_metrics()
     accuracy = tracker.get_summary()
 
     report = generate_report(metrics, accuracy, engine.trades,
-                             f"{SIMULATION_DAYS} 个交易日 (基于实时数据模拟)")
+                             f"基于真实行情数据的交易报告")
 
     print(report)
 

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"math"
-	"math/rand"
 	"sort"
 	"sync"
 	"time"
@@ -37,6 +36,7 @@ type SimTradeService struct {
 	redis             *redis.Client
 	positionManager   *PositionManager
 	accountService    *AccountService
+	marketDataSvc     *MarketDataService
 
 	mu       sync.RWMutex
 	isRunning bool
@@ -47,13 +47,14 @@ type SimTradeService struct {
 }
 
 // NewSimTradeService creates a new SimTradeService.
-func NewSimTradeService(db *gorm.DB, predictionService *PredictionService, redis *redis.Client, positionManager *PositionManager, accountService *AccountService) *SimTradeService {
+func NewSimTradeService(db *gorm.DB, predictionService *PredictionService, redis *redis.Client, positionManager *PositionManager, accountService *AccountService, marketDataSvc *MarketDataService) *SimTradeService {
 	return &SimTradeService{
 		db:                db,
 		predictionService: predictionService,
 		redis:             redis,
 		positionManager:   positionManager,
 		accountService:    accountService,
+		marketDataSvc:     marketDataSvc,
 		isRunning:         false,
 	}
 }
@@ -62,8 +63,8 @@ func NewSimTradeService(db *gorm.DB, predictionService *PredictionService, redis
 // Decision Engine
 // ──────────────────────────────────────────────────────────────
 
-// MockPrediction holds a mock prediction for simulated trading.
-type MockPrediction struct {
+// PredictionInfo holds prediction data from ML service.
+type PredictionInfo struct {
 	Symbol      string
 	StockID     uint
 	Direction   string
@@ -72,7 +73,7 @@ type MockPrediction struct {
 	ExpectedRet float64
 }
 
-// MakeDecision generates trading decisions based on mock predictions.
+// MakeDecision generates trading decisions based on real ML predictions.
 func (s *SimTradeService) MakeDecision(ctx context.Context) ([]SimTradeDecision, error) {
 	// 1. Get all active stocks
 	var stocks []models.Stock
@@ -84,11 +85,15 @@ func (s *SimTradeService) MakeDecision(ctx context.Context) ([]SimTradeDecision,
 		return nil, fmt.Errorf("没有活跃股票")
 	}
 
-	// 2. Generate mock predictions for all active stocks
-	predictions := s.generateMockPredictions(stocks)
+	// 2. Get predictions from ML service or prediction service
+	predictions, err := s.getPredictions(ctx, stocks)
+	if err != nil {
+		log.Printf("[SimTrade] Failed to get predictions: %v, using empty predictions", err)
+		return nil, nil
+	}
 
 	// 3. Filter by confidence >= 55%
-	var filtered []MockPrediction
+	var filtered []PredictionInfo
 	for _, p := range predictions {
 		if p.Confidence >= 55.0 {
 			filtered = append(filtered, p)
@@ -122,7 +127,6 @@ func (s *SimTradeService) MakeDecision(ctx context.Context) ([]SimTradeDecision,
 		return nil, fmt.Errorf("获取持仓失败: %w", err)
 	}
 
-	// Build current position map by symbol
 	positionMap := make(map[string]*models.Position)
 	for _, pos := range currentPositions {
 		if pos.Stock.Symbol != "" {
@@ -135,16 +139,23 @@ func (s *SimTradeService) MakeDecision(ctx context.Context) ([]SimTradeDecision,
 		industryExposure = make(map[string]float64)
 	}
 
-	// 7. Generate decisions
+	// 7. Get real-time prices for all picked stocks
+	priceMap := s.getRealTimePrices(ctx, topPicks, stocks)
+
+	// 8. Generate decisions
 	var decisions []SimTradeDecision
 	for _, pick := range topPicks {
-		stock := s.findStockBySymbol(stocks, pick.Symbol)
+		stock := findStockBySymbol(stocks, pick.Symbol)
 		if stock == nil {
 			continue
 		}
 
-		// Determine quantity based on position sizing
-		currentPrice := pick.TargetPrice * (1 + (rand.Float64()-0.5)*0.02) // mock current price near target
+		// Use real price if available, otherwise use target price
+		currentPrice := pick.TargetPrice
+		if realPrice, ok := priceMap[pick.Symbol]; ok && realPrice > 0 {
+			currentPrice = realPrice
+		}
+
 		lotSize := 100
 		if stock.LotSize > 0 {
 			lotSize = stock.LotSize
@@ -160,46 +171,86 @@ func (s *SimTradeService) MakeDecision(ctx context.Context) ([]SimTradeDecision,
 	return decisions, nil
 }
 
-// generateMockPredictions creates mock predictions for simulated trading.
-func (s *SimTradeService) generateMockPredictions(stocks []models.Stock) []MockPrediction {
-	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
-	var predictions []MockPrediction
+// getPredictions fetches predictions from the ML service.
+func (s *SimTradeService) getPredictions(ctx context.Context, stocks []models.Stock) ([]PredictionInfo, error) {
+	// Try prediction service first
+	if s.predictionService != nil {
+		var predictions []PredictionInfo
+		for _, stock := range stocks {
+			pred, err := s.predictionService.GetPrediction(ctx, stock.Symbol)
+			if err == nil && pred != nil {
+				direction := "hold"
+				if pred.Direction == "up" || pred.Direction == "上涨" {
+					direction = "up"
+				} else if pred.Direction == "down" || pred.Direction == "下跌" {
+					direction = "down"
+				}
 
-	for _, stock := range stocks {
-		// Generate mock confidence between 40% and 90%
-		confidence := 40.0 + rng.Float64()*50.0
-
-		// Generate mock expected return between -10% and +15%
-		expectedRet := (rng.Float64()*25.0 - 10.0)
-
-		// Determine direction
-		direction := "hold"
-		if expectedRet > 2.0 {
-			direction = "up"
-		} else if expectedRet < -2.0 {
-			direction = "down"
+				predictions = append(predictions, PredictionInfo{
+					Symbol:      stock.Symbol,
+					StockID:     stock.ID,
+					Direction:   direction,
+					Confidence:  pred.Confidence,
+					TargetPrice: pred.TargetPrice,
+					ExpectedRet: pred.ExpectedReturn,
+				})
+			}
 		}
-
-		// Base price (mock)
-		basePrice := 10.0 + rng.Float64()*490.0
-		targetPrice := basePrice * (1 + expectedRet/100.0)
-
-		predictions = append(predictions, MockPrediction{
-			Symbol:      stock.Symbol,
-			StockID:     stock.ID,
-			Direction:   direction,
-			Confidence:  confidence,
-			TargetPrice: math.Round(targetPrice*100) / 100,
-			ExpectedRet: math.Round(expectedRet*100) / 100,
-		})
+		if len(predictions) > 0 {
+			return predictions, nil
+		}
 	}
 
-	return predictions
+	// If prediction service returned nothing, return empty
+	return nil, nil
+}
+
+// getRealTimePrices fetches real-time prices from market data or Redis.
+func (s *SimTradeService) getRealTimePrices(ctx context.Context, picks []PredictionInfo, stocks []models.Stock) map[string]float64 {
+	priceMap := make(map[string]float64)
+
+	// Try Redis first
+	if s.redis != nil {
+		for _, pick := range picks {
+			key := fmt.Sprintf("quote:%s", pick.Symbol)
+			val, err := s.redis.Get(ctx, key).Float64()
+			if err == nil && val > 0 {
+				priceMap[pick.Symbol] = val
+			}
+		}
+	}
+
+	// Try market data service
+	if s.marketDataSvc != nil && len(priceMap) == 0 {
+		collectors := s.marketDataSvc.GetCollectors()
+		for _, collector := range collectors {
+			var symbols []string
+			for _, pick := range picks {
+				if _, ok := priceMap[pick.Symbol]; !ok {
+					symbols = append(symbols, pick.Symbol)
+				}
+			}
+			if len(symbols) == 0 {
+				break
+			}
+			data, err := collector.FetchRealTimeData(symbols)
+			if err == nil {
+				for _, md := range data {
+					f, _ := md.Price.Float64()
+					if f > 0 {
+						priceMap[md.Symbol] = f
+					}
+				}
+			}
+		}
+	}
+
+	return priceMap
 }
 
 // buildDecision determines the action (buy/sell/hold) and quantity for a given prediction.
 func (s *SimTradeService) buildDecision(
-	pick MockPrediction,
+	pick PredictionInfo,
 	currentPrice float64,
 	lotSize int,
 	maxSinglePosition float64,
@@ -224,7 +275,6 @@ func (s *SimTradeService) buildDecision(
 		// Buy signal
 		decision.Direction = "buy"
 
-		// Calculate how many shares we can afford
 		affordableQty := int(math.Floor(availableCash / currentPrice / float64(lotSize))) * lotSize
 		if affordableQty <= 0 {
 			decision.Direction = "hold"
@@ -232,10 +282,8 @@ func (s *SimTradeService) buildDecision(
 			return decision
 		}
 
-		// Respect single position limit
 		maxQtyByPosition := int(math.Floor(maxSinglePosition / currentPrice / float64(lotSize))) * lotSize
 
-		// If already holding, deduct existing position value
 		if existingPos != nil {
 			existingValue := float64(existingPos.Quantity) * currentPrice
 			remainingAllowance := maxSinglePosition - existingValue
@@ -247,7 +295,6 @@ func (s *SimTradeService) buildDecision(
 			maxQtyByPosition = int(math.Floor(remainingAllowance / currentPrice / float64(lotSize))) * lotSize
 		}
 
-		// Take the minimum of affordable and max allowed
 		qty := affordableQty
 		if maxQtyByPosition < qty {
 			qty = maxQtyByPosition
@@ -263,10 +310,8 @@ func (s *SimTradeService) buildDecision(
 		decision.Reason = fmt.Sprintf("预测上涨 %.2f%%, 置信度 %.1f%%, 买入 %d 股", pick.ExpectedRet, pick.Confidence, qty)
 
 	} else if pick.Direction == "down" && pick.Confidence >= 60.0 && existingPos != nil && existingPos.Quantity > 0 {
-		// Sell signal
 		decision.Direction = "sell"
 
-		// Sell up to 50% of existing position
 		sellQty := existingPos.Quantity / 2
 		sellQty = (sellQty / lotSize) * lotSize
 		if sellQty <= 0 {
@@ -284,7 +329,7 @@ func (s *SimTradeService) buildDecision(
 }
 
 // findStockBySymbol finds a stock in a slice by symbol.
-func (s *SimTradeService) findStockBySymbol(stocks []models.Stock, symbol string) *models.Stock {
+func findStockBySymbol(stocks []models.Stock, symbol string) *models.Stock {
 	for i := range stocks {
 		if stocks[i].Symbol == symbol {
 			return &stocks[i]
@@ -311,17 +356,15 @@ func (s *SimTradeService) ExecuteTrades(ctx context.Context, decisions []SimTrad
 		// Apply 0.1% slippage
 		execPrice := decision.Price
 		if decision.Direction == "buy" {
-			execPrice = decision.Price * 1.001 // Buy: price slightly higher
+			execPrice = decision.Price * 1.001
 		} else {
-			execPrice = decision.Price * 0.999 // Sell: price slightly lower
+			execPrice = decision.Price * 0.999
 		}
 		execPrice = math.Round(execPrice*100) / 100
 
-		// Calculate trade amount
 		tradeAmount := execPrice * float64(decision.Quantity)
 
 		if decision.Direction == "buy" {
-			// Check available cash
 			account, err := s.accountService.GetAccount()
 			if err != nil {
 				log.Printf("获取账户失败: %v", err)
@@ -332,21 +375,17 @@ func (s *SimTradeService) ExecuteTrades(ctx context.Context, decisions []SimTrad
 				continue
 			}
 
-			// Freeze funds
 			if err := s.accountService.FreezeFunds(decimal.NewFromFloat(tradeAmount)); err != nil {
 				log.Printf("冻结资金失败: %v", err)
 				continue
 			}
 
-			// Update position
 			if err := s.positionManager.UpdatePosition(decision.Symbol, decision.Quantity, decimal.NewFromFloat(execPrice)); err != nil {
-				// Unfreeze on failure
 				_ = s.accountService.UnfreezeFunds(decimal.NewFromFloat(tradeAmount))
 				log.Printf("更新持仓失败: %v", err)
 				continue
 			}
 
-			// Deduct from available cash (unfreeze + deduct)
 			_ = s.accountService.UnfreezeFunds(decimal.NewFromFloat(tradeAmount))
 			if err := s.accountService.UpdateBalance(decimal.NewFromFloat(-tradeAmount)); err != nil {
 				log.Printf("更新余额失败: %v", err)
@@ -354,21 +393,18 @@ func (s *SimTradeService) ExecuteTrades(ctx context.Context, decisions []SimTrad
 			}
 
 		} else if decision.Direction == "sell" {
-			// Update position (reduce)
 			negQty := -decision.Quantity
 			if err := s.positionManager.UpdatePosition(decision.Symbol, negQty, decimal.NewFromFloat(execPrice)); err != nil {
 				log.Printf("更新持仓失败: %v", err)
 				continue
 			}
 
-			// Add to available cash
 			if err := s.accountService.UpdateBalance(decimal.NewFromFloat(tradeAmount)); err != nil {
 				log.Printf("更新余额失败: %v", err)
 				continue
 			}
 		}
 
-		// Record simulated trade
 		trade := models.SimulatedTrade{
 			StockID:    decision.StockID,
 			TradeType:  decision.Direction,
@@ -383,7 +419,6 @@ func (s *SimTradeService) ExecuteTrades(ctx context.Context, decisions []SimTrad
 			log.Printf("记录模拟交易失败: %v", err)
 		}
 
-		// Update trade count
 		today := time.Now().Format("2006-01-02")
 		s.mu.Lock()
 		if s.todayTradeDate != today {
@@ -394,7 +429,6 @@ func (s *SimTradeService) ExecuteTrades(ctx context.Context, decisions []SimTrad
 		s.mu.Unlock()
 	}
 
-	// Recalculate account after all trades
 	if err := s.recalculateAccount(); err != nil {
 		log.Printf("重新计算账户失败: %v", err)
 	}
@@ -422,7 +456,6 @@ func (s *SimTradeService) recalculateAccount() error {
 	account.MarketValue = totalMarketValue
 	account.TotalAssets = account.AvailableCash + account.FrozenCash + totalMarketValue
 
-	// Update in database
 	return s.db.Model(&models.SimAccount{}).Where("id = ?", account.ID).Updates(map[string]interface{}{
 		"total_assets": account.TotalAssets,
 		"market_value": account.MarketValue,
@@ -440,7 +473,6 @@ func (s *SimTradeService) CheckRiskLimits(ctx context.Context) error {
 		return fmt.Errorf("获取账户信息失败: %w", err)
 	}
 
-	// 1. Check daily loss limit (5%)
 	today := time.Now().Format("2006-01-02")
 	todayPnL, err := s.getTodayPnLFromRedis(ctx, today)
 	if err != nil {
@@ -456,7 +488,6 @@ func (s *SimTradeService) CheckRiskLimits(ctx context.Context) error {
 		}
 	}
 
-	// 2. Check single stock position limit (20%)
 	positions, err := s.positionManager.GetPositions()
 	if err != nil {
 		return fmt.Errorf("获取持仓失败: %w", err)
@@ -471,7 +502,6 @@ func (s *SimTradeService) CheckRiskLimits(ctx context.Context) error {
 		}
 	}
 
-	// 3. Check industry exposure limit (40%)
 	industryExposure, err := s.positionManager.GetIndustryExposure()
 	if err != nil {
 		log.Printf("获取行业分布失败: %v", err)
@@ -533,7 +563,6 @@ func (s *SimTradeService) StartScheduler(ctx context.Context) {
 	s.cancelFn = cancel
 	s.mu.Unlock()
 
-	// Update account running status
 	s.db.Model(&models.SimAccount{}).Where("id = ?", 1).Update("is_running", true)
 
 	log.Println("模拟交易调度器已启动")
@@ -547,15 +576,12 @@ func (s *SimTradeService) StartScheduler(ctx context.Context) {
 			log.Println("模拟交易调度器已停止")
 		}()
 
-		// Trading session check ticker: every 5 minutes
 		checkTicker := time.NewTicker(5 * time.Minute)
 		defer checkTicker.Stop()
 
-		// Decision ticker: every 30 minutes during trading hours
 		decisionTicker := time.NewTicker(30 * time.Minute)
 		defer decisionTicker.Stop()
 
-		// Settlement check: every 15 minutes
 		settlementTicker := time.NewTicker(15 * time.Minute)
 		defer settlementTicker.Stop()
 
@@ -568,7 +594,6 @@ func (s *SimTradeService) StartScheduler(ctx context.Context) {
 				return
 
 			case <-checkTicker.C:
-				// Periodic check: verify account is still running
 				var account models.SimAccount
 				if err := s.db.First(&account, 1).Error; err == nil {
 					if !account.IsRunning {
@@ -580,9 +605,7 @@ func (s *SimTradeService) StartScheduler(ctx context.Context) {
 				now := time.Now()
 				today := now.Format("2006-01-02")
 
-				// Check if within trading hours (A-share: 9:30-15:00)
 				if s.isInTradingHours(now) {
-					// Avoid making decisions too frequently (at least 25 min apart)
 					if now.Sub(lastDecisionTime) < 25*time.Minute {
 						continue
 					}
@@ -592,7 +615,6 @@ func (s *SimTradeService) StartScheduler(ctx context.Context) {
 					lastDecisionTime = now
 				}
 
-				// Settlement check after market close
 				if s.isAfterHours(now) && lastSettledDate != today {
 					log.Println("执行盘后结算...")
 					if err := s.SettleDaily(ctx); err != nil {
@@ -606,7 +628,6 @@ func (s *SimTradeService) StartScheduler(ctx context.Context) {
 				now := time.Now()
 				today := now.Format("2006-01-02")
 
-				// Extra settlement check
 				if s.isAfterHours(now) && lastSettledDate != today {
 					log.Println("执行盘后结算(补充检查)...")
 					if err := s.SettleDaily(ctx); err != nil {
@@ -620,17 +641,14 @@ func (s *SimTradeService) StartScheduler(ctx context.Context) {
 	}()
 }
 
-// runDecisionCycle executes one full decision cycle: check risk, make decisions, execute.
+// runDecisionCycle executes one full decision cycle.
 func (s *SimTradeService) runDecisionCycle(ctx context.Context) {
-	// Check risk limits first
 	if err := s.CheckRiskLimits(ctx); err != nil {
 		log.Printf("风险控制: %v", err)
-		// If daily loss limit hit, stop trading for the day
 		s.recordRiskEvent("trading_halted", err.Error(), "")
 		return
 	}
 
-	// Make decisions
 	decisions, err := s.MakeDecision(ctx)
 	if err != nil {
 		log.Printf("生成决策失败: %v", err)
@@ -639,7 +657,6 @@ func (s *SimTradeService) runDecisionCycle(ctx context.Context) {
 
 	log.Printf("生成 %d 条交易决策", len(decisions))
 
-	// Execute trades
 	if err := s.ExecuteTrades(ctx, decisions); err != nil {
 		log.Printf("执行交易失败: %v", err)
 	}
@@ -690,19 +707,16 @@ func (s *SimTradeService) isInTradingHours(now time.Time) bool {
 	}
 	t := now.In(loc)
 
-	// Weekday only
 	if t.Weekday() == time.Saturday || t.Weekday() == time.Sunday {
 		return false
 	}
 
-	// Morning session: 9:30 - 11:30
 	morningStart := time.Date(t.Year(), t.Month(), t.Day(), 9, 30, 0, 0, loc)
 	morningEnd := time.Date(t.Year(), t.Month(), t.Day(), 11, 30, 0, 0, loc)
 	if t.After(morningStart) && t.Before(morningEnd) {
 		return true
 	}
 
-	// Afternoon session: 13:00 - 15:00
 	afternoonStart := time.Date(t.Year(), t.Month(), t.Day(), 13, 0, 0, 0, loc)
 	afternoonEnd := time.Date(t.Year(), t.Month(), t.Day(), 15, 0, 0, 0, loc)
 	if t.After(afternoonStart) && t.Before(afternoonEnd) {
@@ -736,7 +750,6 @@ func (s *SimTradeService) isAfterHours(now time.Time) bool {
 func (s *SimTradeService) SettleDaily(ctx context.Context) error {
 	today := time.Now().Format("2006-01-02")
 
-	// 1. Calculate PnL for all positions
 	positions, err := s.positionManager.GetPositions()
 	if err != nil {
 		return fmt.Errorf("获取持仓失败: %w", err)
@@ -744,7 +757,6 @@ func (s *SimTradeService) SettleDaily(ctx context.Context) error {
 
 	var totalDailyPnL float64
 	for _, pos := range positions {
-		// Get current price from Redis or use last known price
 		currentPrice := s.getCurrentPrice(ctx, pos.Stock.Symbol)
 		if currentPrice > 0 {
 			pnl, err := s.positionManager.CalculateUnrealizedPnL(pos.Stock.Symbol, decimal.NewFromFloat(currentPrice))
@@ -755,13 +767,11 @@ func (s *SimTradeService) SettleDaily(ctx context.Context) error {
 		}
 	}
 
-	// 2. Update account
 	account, err := s.accountService.GetAccount()
 	if err != nil {
 		return fmt.Errorf("获取账户失败: %w", err)
 	}
 
-	// Calculate total market value
 	var totalMarketValue float64
 	for _, pos := range positions {
 		currentPrice := s.getCurrentPrice(ctx, pos.Stock.Symbol)
@@ -769,7 +779,6 @@ func (s *SimTradeService) SettleDaily(ctx context.Context) error {
 			pos.CurrentValue = currentPrice * float64(pos.Quantity)
 		}
 		totalMarketValue += pos.CurrentValue
-		// Update position current value in DB
 		s.db.Model(&models.Position{}).Where("id = ?", pos.ID).Update("current_value", pos.CurrentValue)
 	}
 
@@ -781,7 +790,6 @@ func (s *SimTradeService) SettleDaily(ctx context.Context) error {
 		account.TodayReturn = totalDailyPnL / (account.TotalAssets - totalDailyPnL) * 100
 	}
 
-	// Save to database
 	if err := s.db.Model(&models.SimAccount{}).Where("id = ?", account.ID).Updates(map[string]interface{}{
 		"total_assets": account.TotalAssets,
 		"market_value": account.MarketValue,
@@ -791,7 +799,6 @@ func (s *SimTradeService) SettleDaily(ctx context.Context) error {
 		return fmt.Errorf("更新账户失败: %w", err)
 	}
 
-	// 3. Record daily PnL in Redis
 	if err := s.accountService.RecordDailyPnL(today, decimal.NewFromFloat(totalDailyPnL)); err != nil {
 		log.Printf("记录每日盈亏到Redis失败: %v", err)
 	}
@@ -802,8 +809,9 @@ func (s *SimTradeService) SettleDaily(ctx context.Context) error {
 	return nil
 }
 
-// getCurrentPrice gets the current price of a symbol from Redis or falls back to mock.
+// getCurrentPrice gets the current price of a symbol from Redis or market data.
 func (s *SimTradeService) getCurrentPrice(ctx context.Context, symbol string) float64 {
+	// Try Redis first
 	if s.redis != nil {
 		key := fmt.Sprintf("quote:%s", symbol)
 		val, err := s.redis.Get(ctx, key).Float64()
@@ -812,12 +820,30 @@ func (s *SimTradeService) getCurrentPrice(ctx context.Context, symbol string) fl
 		}
 	}
 
-	// Fallback: generate a mock price based on symbol hash
-	var hash float64
-	for _, c := range symbol {
-		hash = hash*31 + float64(c)
+	// Try Redis market realtime cache
+	if s.redis != nil {
+		key := fmt.Sprintf("market:realtime:%s", symbol)
+		val, err := s.redis.Get(ctx, key).Float64()
+		if err == nil && val > 0 {
+			return val
+		}
 	}
-	return 10.0 + math.Mod(hash, 490.0)
+
+	// Try market data service
+	if s.marketDataSvc != nil {
+		collectors := s.marketDataSvc.GetCollectors()
+		for _, collector := range collectors {
+			data, err := collector.FetchRealTimeData([]string{symbol})
+			if err == nil && len(data) > 0 {
+				f, _ := data[0].Price.Float64()
+				if f > 0 {
+					return f
+				}
+			}
+		}
+	}
+
+	return 0
 }
 
 // GetLatestDecisions retrieves the latest simulated trade decisions.

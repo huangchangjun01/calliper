@@ -48,7 +48,7 @@ class ModelManager:
 
     # ── 训练 ──────────────────────────────────
 
-    def train_all(self, use_mock=True, **kwargs):
+    def train_all(self, **kwargs):
         """训练全部三个模型"""
         results = {}
         for period, model in self.models.items():
@@ -58,14 +58,22 @@ class ModelManager:
             try:
                 with mlflow.start_run(run_name=f"{period}_train_{int(time.time())}"):
                     if period == "short_term":
-                        model.train(df=kwargs.get("short_df"), epochs=kwargs.get("short_epochs", 50))
+                        model.train(
+                            df=kwargs.get("short_df"),
+                            y=kwargs.get("short_y"),
+                            epochs=kwargs.get("short_epochs", 50),
+                        )
                     elif period == "medium_term":
                         model.train(
                             X=kwargs.get("medium_X"),
                             y=kwargs.get("medium_y"),
                         )
                     elif period == "long_term":
-                        model.train(df=kwargs.get("long_df"), epochs=kwargs.get("long_epochs", 50))
+                        model.train(
+                            df=kwargs.get("long_df"),
+                            y=kwargs.get("long_y"),
+                            epochs=kwargs.get("long_epochs", 50),
+                        )
 
                     self._save_model(period)
                     results[period] = "success"
@@ -83,11 +91,19 @@ class ModelManager:
         model = self.models[period]
         with mlflow.start_run(run_name=f"{period}_train_{int(time.time())}"):
             if period == "short_term":
-                model.train(df=kwargs.get("short_df"), epochs=kwargs.get("short_epochs", 50))
+                model.train(
+                    df=kwargs.get("short_df"),
+                    y=kwargs.get("short_y"),
+                    epochs=kwargs.get("short_epochs", 50),
+                )
             elif period == "medium_term":
                 model.train(X=kwargs.get("medium_X"), y=kwargs.get("medium_y"))
             elif period == "long_term":
-                model.train(df=kwargs.get("long_df"), epochs=kwargs.get("long_epochs", 50))
+                model.train(
+                    df=kwargs.get("long_df"),
+                    y=kwargs.get("long_y"),
+                    epochs=kwargs.get("long_epochs", 50),
+                )
 
             self._save_model(period)
 
@@ -156,18 +172,17 @@ class ModelManager:
         return accuracy
 
     def evaluate_all(self, true_data: Dict[str, Any]) -> Dict[str, float]:
-        """评估全部模型"""
+        """评估全部模型。true_data 必须包含每个 period 的 X_true 和 y_true"""
         results = {}
-        labels = {
-            "short_term": ["上涨", "震荡", "下跌"],
-            "medium_term": ["上涨", "震荡", "下跌"],
-            "long_term": ["上涨趋势", "震荡趋势", "下跌趋势"],
-        }
-        # 使用 mock 数据评估
         for period in self.models:
-            mock_y = true_data.get(f"{period}_y", labels[period])
+            X_true = true_data.get(f"{period}_X")
+            y_true = true_data.get(f"{period}_y")
+            if X_true is None or y_true is None:
+                print(f"[ModelManager] No evaluation data for {period}, skipping")
+                results[period] = 0.0
+                continue
             try:
-                acc = self.evaluate(period, None, mock_y)
+                acc = self.evaluate(period, X_true, y_true)
                 results[period] = acc
             except Exception as e:
                 print(f"[ModelManager] Evaluate {period} error: {e}")
@@ -278,13 +293,30 @@ class ModelManager:
 # ──────────────────────────────────────────────
 
 if __name__ == "__main__":
+    import numpy as np
     manager = ModelManager()
 
+    # 使用真实格式数据训练
+    X_short = np.random.randn(60, 20).astype(np.float32)
+    y_short = np.random.randint(0, 3, 60).astype(np.int64)
+    X_medium = np.random.randn(500, 30).astype(np.float32)
+    y_medium = np.random.randint(0, 3, 500).astype(np.int64)
+    X_long = np.random.randn(60, 40).astype(np.float32)
+    y_long = np.random.randint(0, 3, 60).astype(np.int64)
+
     print("=== Training all models ===")
-    manager.train_all()
+    manager.train_all(
+        short_df=X_short, short_y=y_short,
+        medium_X=X_medium, medium_y=y_medium,
+        long_df=X_long, long_y=y_long,
+    )
 
     print("\n=== Predicting ===")
-    preds = manager.predict_all()
+    preds = manager.predict_all({
+        "short_df": X_short[-30:],
+        "medium_X": X_medium[:5],
+        "long_df": X_long[-52:],
+    })
     for period, p in preds.items():
         print(f"  {period}: {p}")
 
@@ -293,15 +325,13 @@ if __name__ == "__main__":
     for period, s in status.items():
         print(f"  {period}: {s}")
 
-    print("\n=== Best Model ===")
-    best = manager.get_best_model("short_term")
-    print(f"  {best['period']} v{best['version']} accuracy={best['accuracy']}")
-
     print("\n=== Evaluate ===")
-    from .short_term_model import ShortTermPredictor
-    eval_results = manager.evaluate_all({"short_term_y": ["上涨", "震荡", "下跌"]})
+    eval_results = manager.evaluate_all({
+        "short_term_X": X_short[-30:],
+        "short_term_y": ["上涨"] * 10 + ["震荡"] * 10 + ["下跌"] * 10,
+        "medium_term_X": X_medium[:10],
+        "medium_term_y": ["上涨"] * 5 + ["震荡"] * 5,
+        "long_term_X": X_long[-52:],
+        "long_term_y": ["上涨趋势"] * 10 + ["震荡趋势"] * 10 + ["下跌趋势"] * 10,
+    })
     print(f"  {eval_results}")
-
-    print("\n=== Check Retrain ===")
-    retrain = manager.check_retrain()
-    print(f"  Need retrain: {retrain}")

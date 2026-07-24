@@ -1,25 +1,34 @@
 package services
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"log"
-	"math/rand"
+	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/shopspring/decimal"
 )
 
 // AKShareCollector implements MarketDataCollector for A-share (Chinese) stocks.
+// Uses Sina Finance API for real-time and historical data.
 type AKShareCollector struct {
-	marketCode string
+	marketCode   string
 	mlServiceURL string
+	httpClient   *http.Client
 }
 
 // NewAKShareCollector creates a new AKShare collector.
 func NewAKShareCollector(mlServiceURL string) *AKShareCollector {
 	return &AKShareCollector{
-		marketCode:    "CN",
+		marketCode:   "CN",
 		mlServiceURL: mlServiceURL,
+		httpClient: &http.Client{
+			Timeout: 10 * time.Second,
+		},
 	}
 }
 
@@ -28,190 +37,288 @@ func (c *AKShareCollector) GetMarketCode() string {
 	return c.marketCode
 }
 
-// FetchRealTimeData fetches real-time A-share market data.
-// Uses mock data when ml-service is unavailable.
+// sinaSymbol converts internal symbol format to Sina Finance format.
+// e.g., "600519" -> "sh600519", "000001" -> "sz000001"
+func (c *AKShareCollector) sinaSymbol(symbol string) string {
+	if strings.HasPrefix(symbol, "6") {
+		return "sh" + symbol
+	}
+	return "sz" + symbol
+}
+
+// FetchRealTimeData fetches real-time A-share market data from Sina Finance API.
 func (c *AKShareCollector) FetchRealTimeData(symbols []string) ([]MarketData, error) {
-	log.Printf("[AKShare] Fetching real-time data for %d symbols (mock mode)", len(symbols))
+	log.Printf("[AKShare] Fetching real-time data for %d symbols from Sina Finance", len(symbols))
+
+	var sinaCodes []string
+	for _, s := range symbols {
+		sinaCodes = append(sinaCodes, c.sinaSymbol(s))
+	}
+
+	url := fmt.Sprintf("https://hq.sinajs.cn/list=%s", strings.Join(sinaCodes, ","))
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Referer", "https://finance.sina.com.cn")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		log.Printf("[AKShare] HTTP error: %v, falling back to empty data", err)
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read body: %w", err)
+	}
+
+	text := string(body)
+	lines := strings.Split(text, "\n")
 
 	var result []MarketData
 	now := time.Now()
 
-	for _, symbol := range symbols {
-		basePrice := c.mockBasePrice(symbol)
-		price := basePrice.Mul(decimal.NewFromFloat(1 + (rand.Float64()-0.5)*0.06))
-		preClose := basePrice
-		change := price.Sub(preClose)
-		changePercent, _ := price.Sub(preClose).Div(preClose).Mul(decimal.NewFromInt(100)).Float64()
-
-		md := MarketData{
-			Symbol:         symbol,
-			Name:           c.mockName(symbol),
-			Price:          price,
-			Open:           basePrice.Mul(decimal.NewFromFloat(1 + (rand.Float64()-0.5)*0.03)),
-			High:           price.Mul(decimal.NewFromFloat(1.02)),
-			Low:            price.Mul(decimal.NewFromFloat(0.98)),
-			PreClose:       preClose,
-			Volume:         rand.Int63n(50000000) + 1000000,
-			Amount:         price.Mul(decimal.NewFromInt(rand.Int63n(500000000) + 10000000)),
-			Change:         change,
-			ChangePercent:  changePercent,
-			TurnoverRate:   rand.Float64() * 5,
-			PE:             10 + rand.Float64()*40,
-			PB:             1 + rand.Float64()*10,
-			TotalMarketCap: price.Mul(decimal.NewFromInt(rand.Int63n(10000000000) + 100000000)),
-			FloatMarketCap: price.Mul(decimal.NewFromInt(rand.Int63n(5000000000) + 50000000)),
-			BidPrices:      c.mockBidPrices(price),
-			BidVolumes:     c.mockVolumes(),
-			AskPrices:      c.mockAskPrices(price),
-			AskVolumes:     c.mockVolumes(),
-			Timestamp:      now,
-			MarketCode:     c.marketCode,
-		}
-
-		result = append(result, md)
-	}
-
-	return result, nil
-}
-
-// FetchHistoricalData fetches historical A-share data.
-// Uses mock data when ml-service is unavailable.
-func (c *AKShareCollector) FetchHistoricalData(symbol string, start, end time.Time, interval string) ([]MarketData, error) {
-	log.Printf("[AKShare] Fetching historical data for %s from %s to %s interval=%s (mock mode)",
-		symbol, start.Format("2006-01-02"), end.Format("2006-01-02"), interval)
-
-	var result []MarketData
-	basePrice := c.mockBasePrice(symbol)
-
-	current := start
-	for current.Before(end) || current.Equal(end) {
-		step := c.intervalStep(interval)
-		// Skip weekends for daily data
-		if interval == "1d" && (current.Weekday() == time.Saturday || current.Weekday() == time.Sunday) {
-			current = current.Add(step)
+	for i, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
 			continue
 		}
 
-		fluctuation := (rand.Float64() - 0.5) * 0.06
-		open := basePrice
-		close := basePrice.Mul(decimal.NewFromFloat(1 + fluctuation))
-		high := open
-		low := close
-		if close.GreaterThan(open) {
-			high = close.Mul(decimal.NewFromFloat(1.01))
-			low = open.Mul(decimal.NewFromFloat(0.99))
-		} else {
-			high = open.Mul(decimal.NewFromFloat(1.01))
-			low = close.Mul(decimal.NewFromFloat(0.99))
+		// Parse Sina Finance format: var hq_str_sh600519="name,open,prev_close,price,high,low,..."
+		idx := strings.Index(line, "\"")
+		if idx < 0 {
+			continue
+		}
+		dataStr := line[idx+1:]
+		endIdx := strings.LastIndex(dataStr, "\"")
+		if endIdx < 0 {
+			continue
+		}
+		dataStr = dataStr[:endIdx]
+
+		if dataStr == "" {
+			continue
 		}
 
-		preClose := basePrice
-		change := close.Sub(preClose)
-		changePercent, _ := change.Div(preClose).Mul(decimal.NewFromInt(100)).Float64()
+		parts := strings.Split(dataStr, ",")
+		if len(parts) < 9 {
+			continue
+		}
+
+		symbol := ""
+		if i < len(symbols) {
+			symbol = symbols[i]
+		}
+
+		price := parseFloatSafe(parts[3])
+		open := parseFloatSafe(parts[1])
+		prevClose := parseFloatSafe(parts[2])
+		high := parseFloatSafe(parts[4])
+		low := parseFloatSafe(parts[5])
+		volume := parseInt64Safe(parts[8])
+		amount := parseFloatSafe(parts[9])
+
+		change := price.Sub(prevClose)
+		changePercent := float64(0)
+		if !prevClose.IsZero() {
+			changePercent, _ = change.Div(prevClose).Mul(decimal.NewFromInt(100)).Float64()
+		}
 
 		md := MarketData{
-			Symbol:         symbol,
-			Name:           c.mockName(symbol),
-			Price:          close,
-			Open:           open,
-			High:           high,
-			Low:            low,
-			PreClose:       preClose,
-			Volume:         rand.Int63n(30000000) + 500000,
-			Amount:         close.Mul(decimal.NewFromInt(rand.Int63n(300000000) + 5000000)),
-			Change:         change,
-			ChangePercent:  changePercent,
-			TurnoverRate:   rand.Float64() * 5,
-			PE:             10 + rand.Float64()*40,
-			PB:             1 + rand.Float64()*10,
-			TotalMarketCap: close.Mul(decimal.NewFromInt(rand.Int63n(10000000000) + 100000000)),
-			FloatMarketCap: close.Mul(decimal.NewFromInt(rand.Int63n(5000000000) + 50000000)),
-			BidPrices:      c.mockBidPrices(close),
-			BidVolumes:     c.mockVolumes(),
-			AskPrices:      c.mockAskPrices(close),
-			AskVolumes:     c.mockVolumes(),
-			Timestamp:      current,
-			MarketCode:     c.marketCode,
+			Symbol:        symbol,
+			Name:          parts[0],
+			Price:         price,
+			Open:          open,
+			High:          high,
+			Low:           low,
+			PreClose:      prevClose,
+			Volume:        volume,
+			Amount:        decimal.NewFromFloat(amount),
+			Change:        change,
+			ChangePercent: changePercent,
+			Timestamp:     now,
+			MarketCode:    c.marketCode,
+		}
+
+		// Parse bid/ask prices if available (indices depend on Sina format)
+		// Sina format varies by market, bid/ask are typically at positions 10-29
+		if len(parts) > 29 {
+			bidPrices := make([]decimal.Decimal, 5)
+			bidVolumes := make([]int64, 5)
+			askPrices := make([]decimal.Decimal, 5)
+			askVolumes := make([]int64, 5)
+
+			for j := 0; j < 5; j++ {
+				bidPrices[j] = decimal.NewFromFloat(parseFloatSafe(parts[11+j*2]))
+				bidVolumes[j] = parseInt64Safe(parts[10+j*2])
+				askPrices[j] = decimal.NewFromFloat(parseFloatSafe(parts[21+j*2]))
+				askVolumes[j] = parseInt64Safe(parts[20+j*2])
+			}
+			md.BidPrices = bidPrices
+			md.BidVolumes = bidVolumes
+			md.AskPrices = askPrices
+			md.AskVolumes = askVolumes
 		}
 
 		result = append(result, md)
-		basePrice = close
-		current = current.Add(step)
 	}
 
+	log.Printf("[AKShare] Fetched %d real-time quotes from Sina Finance", len(result))
 	return result, nil
 }
 
-func (c *AKShareCollector) mockBasePrice(symbol string) decimal.Decimal {
-	// Deterministic base price based on symbol hash
-	h := 0
-	for _, ch := range symbol {
-		h = h*31 + int(ch)
+// FetchHistoricalData fetches historical A-share K-line data from Sina Finance API.
+func (c *AKShareCollector) FetchHistoricalData(symbol string, start, end time.Time, interval string) ([]MarketData, error) {
+	log.Printf("[AKShare] Fetching historical data for %s from %s to %s interval=%s",
+		symbol, start.Format("2006-01-02"), end.Format("2006-01-02"), interval)
+
+	// Sina Finance K-line API
+	scaleMap := map[string]string{
+		"1m":  "5",
+		"5m":  "15",
+		"15m": "30",
+		"30m": "60",
+		"60m": "60",
+		"1h":  "60",
+		"1d":  "240",
+		"1w":  "1200",
 	}
-	base := 10.0 + float64(h%1000)/10.0
-	return decimal.NewFromFloat(base)
+
+	scale, ok := scaleMap[interval]
+	if !ok {
+		scale = "240" // default to daily
+	}
+
+	datalen := "200"
+	if interval == "1m" {
+		datalen = "240"
+	}
+
+	sinaCode := c.sinaSymbol(symbol)
+	url := fmt.Sprintf(
+		"https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol=%s&scale=%s&ma=no&datalen=%s",
+		sinaCode, scale, datalen,
+	)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Referer", "https://finance.sina.com.cn")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("HTTP error: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read body: %w", err)
+	}
+
+	// Parse JSON response
+	type KLineItem struct {
+		Day    string `json:"day"`
+		Open   string `json:"open"`
+		High   string `json:"high"`
+		Low    string `json:"low"`
+		Close  string `json:"close"`
+		Volume string `json:"volume"`
+	}
+
+	var items []KLineItem
+	if err := json.Unmarshal(body, &items); err != nil {
+		log.Printf("[AKShare] JSON parse error: %v, body: %s", err, string(body[:min(len(body), 200)]))
+		return nil, fmt.Errorf("parse JSON: %w", err)
+	}
+
+	var result []MarketData
+	for _, item := range items {
+		t, err := time.Parse("2006-01-02", item.Day)
+		if err != nil {
+			// Try minute-level format
+			t, err = time.Parse("2006-01-02 15:04:05", item.Day)
+			if err != nil {
+				continue
+			}
+		}
+
+		// Filter by date range
+		if t.Before(start) || t.After(end) {
+			continue
+		}
+
+		open := parseFloatSafe(item.Open)
+		high := parseFloatSafe(item.High)
+		low := parseFloatSafe(item.Low)
+		close := parseFloatSafe(item.Close)
+		volume := parseInt64Safe(item.Volume)
+
+		md := MarketData{
+			Symbol:     symbol,
+			Price:      close,
+			Open:       open,
+			High:       high,
+			Low:        low,
+			Volume:     volume,
+			Timestamp:  t,
+			MarketCode: c.marketCode,
+		}
+
+		// Set preclose from previous item or use open
+		if len(result) > 0 {
+			md.PreClose = result[len(result)-1].Price
+		} else {
+			md.PreClose = open
+		}
+
+		if !md.PreClose.IsZero() {
+			md.Change = md.Price.Sub(md.PreClose)
+			md.ChangePercent, _ = md.Change.Div(md.PreClose).Mul(decimal.NewFromInt(100)).Float64()
+		}
+
+		result = append(result, md)
+	}
+
+	log.Printf("[AKShare] Fetched %d historical K-line records for %s", len(result), symbol)
+	return result, nil
 }
 
-func (c *AKShareCollector) mockName(symbol string) string {
-	nameMap := map[string]string{
-		"000001": "平安银行",
-		"000002": "万科A",
-		"600000": "浦发银行",
-		"600036": "招商银行",
-		"600519": "贵州茅台",
-		"000858": "五粮液",
-		"300750": "宁德时代",
-		"002415": "海康威视",
-		"601318": "中国平安",
-		"600276": "恒瑞医药",
+func min(a, b int) int {
+	if a < b {
+		return a
 	}
-	if name, ok := nameMap[symbol]; ok {
-		return name
-	}
-	return fmt.Sprintf("股票%s", symbol)
+	return b
 }
 
-func (c *AKShareCollector) mockBidPrices(price decimal.Decimal) []decimal.Decimal {
-	bidPrices := make([]decimal.Decimal, 5)
-	for i := 0; i < 5; i++ {
-		offset := decimal.NewFromFloat(float64(i+1) * 0.01)
-		bidPrices[i] = price.Sub(offset)
+func parseFloatSafe(s string) float64 {
+	s = strings.TrimSpace(s)
+	if s == "" || s == "-" {
+		return 0
 	}
-	return bidPrices
+	v, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return 0
+	}
+	return v
 }
 
-func (c *AKShareCollector) mockAskPrices(price decimal.Decimal) []decimal.Decimal {
-	askPrices := make([]decimal.Decimal, 5)
-	for i := 0; i < 5; i++ {
-		offset := decimal.NewFromFloat(float64(i+1) * 0.01)
-		askPrices[i] = price.Add(offset)
+func parseInt64Safe(s string) int64 {
+	s = strings.TrimSpace(s)
+	if s == "" || s == "-" {
+		return 0
 	}
-	return askPrices
-}
-
-func (c *AKShareCollector) mockVolumes() []int64 {
-	volumes := make([]int64, 5)
-	for i := 0; i < 5; i++ {
-		volumes[i] = rand.Int63n(100000) + 1000
+	v, err := strconv.ParseInt(s, 10, 64)
+	if err != nil {
+		// Try float first
+		f, ferr := strconv.ParseFloat(s, 64)
+		if ferr != nil {
+			return 0
+		}
+		return int64(f)
 	}
-	return volumes
-}
-
-func (c *AKShareCollector) intervalStep(interval string) time.Duration {
-	switch interval {
-	case "1m":
-		return time.Minute
-	case "5m":
-		return 5 * time.Minute
-	case "15m":
-		return 15 * time.Minute
-	case "30m":
-		return 30 * time.Minute
-	case "60m", "1h":
-		return time.Hour
-	case "1d":
-		return 24 * time.Hour
-	default:
-		return 24 * time.Hour
-	}
+	return v
 }

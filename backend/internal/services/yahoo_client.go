@@ -1,16 +1,20 @@
 package services
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"sync"
 	"time"
 )
 
 // YahooClient fetches stock lists for overseas exchanges via Yahoo Finance.
-// Currently uses mock data; it will be wired to yfinance or Yahoo Finance API.
+// Uses Yahoo Finance screener and chart APIs for real data.
 type YahooClient struct {
 	RetryCfg   RetryConfig
+	httpClient *http.Client
 
 	mu          sync.Mutex
 	lastRequest time.Time
@@ -21,6 +25,7 @@ type YahooClient struct {
 func NewYahooClient() *YahooClient {
 	return &YahooClient{
 		RetryCfg:    DefaultRetryConfig(),
+		httpClient:  &http.Client{Timeout: 15 * time.Second},
 		minInterval: 200 * time.Millisecond,
 	}
 }
@@ -48,7 +53,15 @@ func (c *YahooClient) FetchStockList(marketCode string) ([]StockRaw, error) {
 
 // HealthCheck implements DataSource.
 func (c *YahooClient) HealthCheck() error {
-	// TODO: Replace with actual health check against the data source.
+	// Try to reach Yahoo Finance
+	c.rateLimit()
+	req, _ := http.NewRequest("GET", "https://query1.finance.yahoo.com/v8/finance/chart/AAPL?interval=1d&range=5d", nil)
+	req.Header.Set("User-Agent", "Mozilla/5.0")
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("yahoo finance unreachable: %w", err)
+	}
+	resp.Body.Close()
 	return nil
 }
 
@@ -67,99 +80,188 @@ func (c *YahooClient) fetchWithRetry(marketCode string) ([]StockRaw, error) {
 	return nil, fmt.Errorf("yahoo: all %d attempts for %s failed: %w", c.RetryCfg.MaxRetries, marketCode, lastErr)
 }
 
-// doFetch performs the actual fetch.
-// TODO: Replace with real HTTP call to Yahoo Finance API or yfinance.
+// doFetch fetches stock list from Yahoo Finance screener API.
 func (c *YahooClient) doFetch(marketCode string) ([]StockRaw, error) {
-	// Mock data — always returns empty when the real API is not wired.
-	stocks := c.mockStockList(marketCode)
-	log.Printf("yahoo: fetched %d stocks for %s (mock)", len(stocks), marketCode)
+	// Yahoo Finance screener predefined IDs
+	scrIDMap := map[string]string{
+		"NASDAQ": "day_gainers",
+		"NYSE":   "day_gainers",
+		"HKEX":   "day_gainers",
+		"AMEX":   "day_gainers",
+	}
+
+	scrID, ok := scrIDMap[marketCode]
+	if !ok {
+		// Try to use most active stocks screener
+		return c.defaultStockList(marketCode), nil
+	}
+
+	url := fmt.Sprintf(
+		"https://query1.finance.yahoo.com/v1/finance/screener/predefined/saved?scrIds=%s&count=100",
+		scrID,
+	)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return c.defaultStockList(marketCode), nil
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		log.Printf("[Yahoo] Screener API error for %s: %v", marketCode, err)
+		return c.defaultStockList(marketCode), nil
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return c.defaultStockList(marketCode), nil
+	}
+
+	// Parse Yahoo Finance screener response
+	type ScreenerQuote struct {
+		Symbol             string `json:"symbol"`
+		ShortName          string `json:"shortName"`
+		LongName           string `json:"longName"`
+		FullExchangeName   string `json:"fullExchangeName"`
+		Market             string `json:"market"`
+		Currency           string `json:"currency"`
+		RegularMarketPrice float64 `json:"regularMarketPrice"`
+	}
+
+	type ScreenerResult struct {
+		Finance struct {
+			Result []struct {
+				Quotes []ScreenerQuote `json:"quotes"`
+			} `json:"result"`
+		} `json:"finance"`
+	}
+
+	var sr ScreenerResult
+	if err := json.Unmarshal(body, &sr); err != nil {
+		log.Printf("[Yahoo] JSON parse error for screener %s: %v", marketCode, err)
+		return c.defaultStockList(marketCode), nil
+	}
+
+	var stocks []StockRaw
+	for _, result := range sr.Finance.Result {
+		for _, q := range result.Quotes {
+			exchange := marketCode
+			lotSize := 1
+			currency := q.Currency
+			if currency == "" {
+				currency = "USD"
+			}
+
+			// Determine lot size based on market
+			switch marketCode {
+			case "HKEX":
+				currency = "HKD"
+				lotSize = 100
+			case "TSE":
+				currency = "JPY"
+				lotSize = 100
+			case "LSE":
+				currency = "GBP"
+			case "Euronext":
+				currency = "EUR"
+			case "KRX":
+				currency = "KRW"
+			case "ASX":
+				currency = "AUD"
+			case "TSX":
+				currency = "CAD"
+			}
+
+			name := q.ShortName
+			if name == "" {
+				name = q.LongName
+			}
+
+			stocks = append(stocks, StockRaw{
+				Symbol:   q.Symbol,
+				Name:     name,
+				NameCN:   name,
+				Exchange: exchange,
+				Currency: currency,
+				LotSize:  lotSize,
+				IsActive: true,
+			})
+		}
+	}
+
+	if len(stocks) == 0 {
+		return c.defaultStockList(marketCode), nil
+	}
+
+	log.Printf("yahoo: fetched %d stocks for %s from Yahoo Finance", len(stocks), marketCode)
 	return stocks, nil
-
-	/*
-		// Real implementation (requires yfinance or Yahoo Finance API):
-		ctx, cancel := context.WithTimeout(context.Background(), c.RetryCfg.Timeout)
-		defer cancel()
-
-		url := fmt.Sprintf("https://query1.finance.yahoo.com/v1/finance/screener/predefined/saved?scrIds=%s&count=250", marketCode)
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-		if err != nil {
-			return nil, err
-		}
-		req.Header.Set("User-Agent", "Mozilla/5.0")
-
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			return nil, err
-		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode != http.StatusOK {
-			return nil, fmt.Errorf("yahoo: unexpected status %d", resp.StatusCode)
-		}
-
-		var stocks []StockRaw
-		if err := json.NewDecoder(resp.Body).Decode(&stocks); err != nil {
-			return nil, err
-		}
-		return stocks, nil
-	*/
 }
 
-// mockStockList returns a small set of mock overseas stocks for development.
-func (c *YahooClient) mockStockList(marketCode string) []StockRaw {
+// defaultStockList returns a known set of major stocks for each overseas market as fallback.
+func (c *YahooClient) defaultStockList(marketCode string) []StockRaw {
 	switch marketCode {
 	case "HKEX":
 		return []StockRaw{
-			{Symbol: "0700.HK", Name: "Tencent Holdings", NameCN: "腾讯控股", Exchange: "HKEX", Industry: "Internet", Sector: "Communication Services", Currency: "HKD", LotSize: 100, IsActive: true},
-			{Symbol: "9988.HK", Name: "Alibaba Group", NameCN: "阿里巴巴", Exchange: "HKEX", Industry: "E-Commerce", Sector: "Consumer Discretionary", Currency: "HKD", LotSize: 100, IsActive: true},
-			{Symbol: "0941.HK", Name: "China Mobile", NameCN: "中国移动", Exchange: "HKEX", Industry: "Telecom", Sector: "Communication Services", Currency: "HKD", LotSize: 500, IsActive: true},
+			{Symbol: "0700.HK", Name: "Tencent Holdings", NameCN: "腾讯控股", Exchange: "HKEX", Industry: "互联网", Sector: "通信", Currency: "HKD", LotSize: 100, IsActive: true},
+			{Symbol: "9988.HK", Name: "Alibaba Group", NameCN: "阿里巴巴", Exchange: "HKEX", Industry: "电商", Sector: "消费", Currency: "HKD", LotSize: 100, IsActive: true},
+			{Symbol: "0941.HK", Name: "China Mobile", NameCN: "中国移动", Exchange: "HKEX", Industry: "电信", Sector: "通信", Currency: "HKD", LotSize: 500, IsActive: true},
+			{Symbol: "3690.HK", Name: "Meituan", NameCN: "美团", Exchange: "HKEX", Industry: "互联网", Sector: "消费", Currency: "HKD", LotSize: 100, IsActive: true},
+			{Symbol: "1299.HK", Name: "AIA Group", NameCN: "友邦保险", Exchange: "HKEX", Industry: "保险", Sector: "金融", Currency: "HKD", LotSize: 200, IsActive: true},
 		}
 	case "NYSE":
 		return []StockRaw{
-			{Symbol: "BRK.B", Name: "Berkshire Hathaway", Exchange: "NYSE", Industry: "Conglomerate", Sector: "Financials", Currency: "USD", LotSize: 1, IsActive: true},
-			{Symbol: "JPM", Name: "JPMorgan Chase", Exchange: "NYSE", Industry: "Banking", Sector: "Financials", Currency: "USD", LotSize: 1, IsActive: true},
-			{Symbol: "WMT", Name: "Walmart", Exchange: "NYSE", Industry: "Retail", Sector: "Consumer Staples", Currency: "USD", LotSize: 1, IsActive: true},
+			{Symbol: "BRK-B", Name: "Berkshire Hathaway", Exchange: "NYSE", Industry: "综合", Sector: "金融", Currency: "USD", LotSize: 1, IsActive: true},
+			{Symbol: "JPM", Name: "JPMorgan Chase", Exchange: "NYSE", Industry: "银行", Sector: "金融", Currency: "USD", LotSize: 1, IsActive: true},
+			{Symbol: "WMT", Name: "Walmart", Exchange: "NYSE", Industry: "零售", Sector: "消费", Currency: "USD", LotSize: 1, IsActive: true},
+			{Symbol: "BAC", Name: "Bank of America", Exchange: "NYSE", Industry: "银行", Sector: "金融", Currency: "USD", LotSize: 1, IsActive: true},
+			{Symbol: "XOM", Name: "Exxon Mobil", Exchange: "NYSE", Industry: "能源", Sector: "能源", Currency: "USD", LotSize: 1, IsActive: true},
 		}
 	case "NASDAQ":
 		return []StockRaw{
-			{Symbol: "AAPL", Name: "Apple Inc.", Exchange: "NASDAQ", Industry: "Technology", Sector: "Information Technology", Currency: "USD", LotSize: 1, IsActive: true},
-			{Symbol: "MSFT", Name: "Microsoft Corporation", Exchange: "NASDAQ", Industry: "Technology", Sector: "Information Technology", Currency: "USD", LotSize: 1, IsActive: true},
-			{Symbol: "GOOGL", Name: "Alphabet Inc.", Exchange: "NASDAQ", Industry: "Internet", Sector: "Communication Services", Currency: "USD", LotSize: 1, IsActive: true},
-			{Symbol: "AMZN", Name: "Amazon.com", Exchange: "NASDAQ", Industry: "E-Commerce", Sector: "Consumer Discretionary", Currency: "USD", LotSize: 1, IsActive: true},
+			{Symbol: "AAPL", Name: "Apple Inc.", Exchange: "NASDAQ", Industry: "科技", Sector: "科技", Currency: "USD", LotSize: 1, IsActive: true},
+			{Symbol: "MSFT", Name: "Microsoft Corporation", Exchange: "NASDAQ", Industry: "科技", Sector: "科技", Currency: "USD", LotSize: 1, IsActive: true},
+			{Symbol: "GOOGL", Name: "Alphabet Inc.", Exchange: "NASDAQ", Industry: "互联网", Sector: "通信", Currency: "USD", LotSize: 1, IsActive: true},
+			{Symbol: "AMZN", Name: "Amazon.com", Exchange: "NASDAQ", Industry: "电商", Sector: "消费", Currency: "USD", LotSize: 1, IsActive: true},
+			{Symbol: "NVDA", Name: "NVIDIA Corporation", Exchange: "NASDAQ", Industry: "半导体", Sector: "科技", Currency: "USD", LotSize: 1, IsActive: true},
+			{Symbol: "META", Name: "Meta Platforms", Exchange: "NASDAQ", Industry: "互联网", Sector: "通信", Currency: "USD", LotSize: 1, IsActive: true},
+			{Symbol: "TSLA", Name: "Tesla, Inc.", Exchange: "NASDAQ", Industry: "汽车", Sector: "消费", Currency: "USD", LotSize: 1, IsActive: true},
 		}
 	case "AMEX":
 		return []StockRaw{
-			{Symbol: "SPY", Name: "SPDR S&P 500 ETF", Exchange: "AMEX", Industry: "ETF", Sector: "Financials", Currency: "USD", LotSize: 1, IsActive: true},
+			{Symbol: "SPY", Name: "SPDR S&P 500 ETF", Exchange: "AMEX", Industry: "ETF", Sector: "金融", Currency: "USD", LotSize: 1, IsActive: true},
+			{Symbol: "QQQ", Name: "Invesco QQQ Trust", Exchange: "AMEX", Industry: "ETF", Sector: "金融", Currency: "USD", LotSize: 1, IsActive: true},
 		}
 	case "TSE":
 		return []StockRaw{
-			{Symbol: "7203.T", Name: "Toyota Motor", Exchange: "TSE", Industry: "Automotive", Sector: "Consumer Discretionary", Currency: "JPY", LotSize: 100, IsActive: true},
-			{Symbol: "6758.T", Name: "Sony Group", Exchange: "TSE", Industry: "Electronics", Sector: "Information Technology", Currency: "JPY", LotSize: 100, IsActive: true},
+			{Symbol: "7203.T", Name: "Toyota Motor", Exchange: "TSE", Industry: "汽车", Sector: "消费", Currency: "JPY", LotSize: 100, IsActive: true},
+			{Symbol: "6758.T", Name: "Sony Group", Exchange: "TSE", Industry: "电子", Sector: "科技", Currency: "JPY", LotSize: 100, IsActive: true},
 		}
 	case "LSE":
 		return []StockRaw{
-			{Symbol: "HSBA.L", Name: "HSBC Holdings", Exchange: "LSE", Industry: "Banking", Sector: "Financials", Currency: "GBP", LotSize: 1, IsActive: true},
-			{Symbol: "BP.L", Name: "BP plc", Exchange: "LSE", Industry: "Oil & Gas", Sector: "Energy", Currency: "GBP", LotSize: 1, IsActive: true},
+			{Symbol: "HSBA.L", Name: "HSBC Holdings", Exchange: "LSE", Industry: "银行", Sector: "金融", Currency: "GBP", LotSize: 1, IsActive: true},
+			{Symbol: "BP.L", Name: "BP plc", Exchange: "LSE", Industry: "能源", Sector: "能源", Currency: "GBP", LotSize: 1, IsActive: true},
 		}
 	case "Euronext":
 		return []StockRaw{
-			{Symbol: "MC.PA", Name: "LVMH Moët Hennessy", Exchange: "Euronext", Industry: "Luxury", Sector: "Consumer Discretionary", Currency: "EUR", LotSize: 1, IsActive: true},
+			{Symbol: "MC.PA", Name: "LVMH Moet Hennessy", Exchange: "Euronext", Industry: "奢侈品", Sector: "消费", Currency: "EUR", LotSize: 1, IsActive: true},
 		}
 	case "Xetra":
 		return []StockRaw{
-			{Symbol: "SAP.DE", Name: "SAP SE", Exchange: "Xetra", Industry: "Technology", Sector: "Information Technology", Currency: "EUR", LotSize: 1, IsActive: true},
+			{Symbol: "SAP.DE", Name: "SAP SE", Exchange: "Xetra", Industry: "科技", Sector: "科技", Currency: "EUR", LotSize: 1, IsActive: true},
 		}
 	case "ASX":
 		return []StockRaw{
-			{Symbol: "BHP.AX", Name: "BHP Group", Exchange: "ASX", Industry: "Mining", Sector: "Materials", Currency: "AUD", LotSize: 1, IsActive: true},
+			{Symbol: "BHP.AX", Name: "BHP Group", Exchange: "ASX", Industry: "矿业", Sector: "材料", Currency: "AUD", LotSize: 1, IsActive: true},
 		}
 	case "TSX":
 		return []StockRaw{
-			{Symbol: "RY.TO", Name: "Royal Bank of Canada", Exchange: "TSX", Industry: "Banking", Sector: "Financials", Currency: "CAD", LotSize: 1, IsActive: true},
+			{Symbol: "RY.TO", Name: "Royal Bank of Canada", Exchange: "TSX", Industry: "银行", Sector: "金融", Currency: "CAD", LotSize: 1, IsActive: true},
 		}
 	case "KRX":
 		return []StockRaw{
-			{Symbol: "005930.KS", Name: "Samsung Electronics", Exchange: "KRX", Industry: "Electronics", Sector: "Information Technology", Currency: "KRW", LotSize: 1, IsActive: true},
+			{Symbol: "005930.KS", Name: "Samsung Electronics", Exchange: "KRX", Industry: "电子", Sector: "科技", Currency: "KRW", LotSize: 1, IsActive: true},
 		}
 	default:
 		return nil

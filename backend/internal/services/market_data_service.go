@@ -187,8 +187,32 @@ func (s *MarketDataService) isTradingHours(marketCode string) bool {
 	}
 }
 
-// getDefaultSymbols returns default symbols for a market.
+// getDefaultSymbols returns symbols for a market, pulling from database first
+// with a hardcoded fallback list when the database is empty.
 func (s *MarketDataService) getDefaultSymbols(marketCode string) []string {
+	// Try to get symbols from database
+	if s.tsdb != nil {
+		var symbols []string
+		country := marketCode
+		switch marketCode {
+		case "CN":
+			country = "CN"
+		case "US":
+			country = "US"
+		}
+		err := s.tsdb.Model(&struct {
+			Symbol string
+		}{}).
+			Table("stocks").
+			Where("is_active = ?", true).
+			Limit(20).
+			Pluck("symbol", &symbols).Error
+		if err == nil && len(symbols) > 0 {
+			return symbols
+		}
+	}
+
+	// Fallback: well-known major stocks
 	switch marketCode {
 	case "CN":
 		return []string{

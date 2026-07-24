@@ -11,6 +11,7 @@ from typing import Dict, List, Optional, Any
 import numpy as np
 
 from ..models.model_manager import ModelManager
+from ..utils.data_loader import DataLoader
 
 
 class PredictionTask:
@@ -20,27 +21,67 @@ class PredictionTask:
         self.model_manager = model_manager or ModelManager()
         self.max_workers = max_workers
         self.prediction_history: List[Dict] = []
+        self.data_loader = DataLoader()
 
     def _get_active_stocks(self) -> List[str]:
-        """获取活跃股票列表（mock 实现）"""
-        # 实际应从数据库读取
+        """获取活跃股票列表，从数据库读取"""
+        try:
+            # Try to get stocks from database
+            if self.data_loader.engine is not None:
+                import pandas as pd
+                query = "SELECT DISTINCT symbol FROM stocks WHERE is_active = true LIMIT 100"
+                df = pd.read_sql_query(query, self.data_loader.engine)
+                if not df.empty:
+                    return df["symbol"].tolist()
+        except Exception as e:
+            print(f"[PredictionTask] Failed to get active stocks from DB: {e}")
+
+        # Fallback: use well-known stock codes
         return [
             "000001", "000002", "000858", "002415", "300750",
             "600519", "600036", "601318", "601398", "603259",
         ]
 
     def _build_features(self, symbol: str, period: str) -> Any:
-        """构建特征数据（mock 实现）"""
-        if period == "short_term":
-            # 近 30 日分钟级数据，20 个特征
-            return np.random.randn(30, 20).astype(np.float32)
-        elif period == "medium_term":
-            # 日线数据，30 个特征
-            return np.random.randn(1, 30).astype(np.float32)
-        elif period == "long_term":
-            # 52 周周线数据，40 个特征
-            return np.random.randn(52, 40).astype(np.float32)
-        return None
+        """构建特征数据，从真实数据源加载"""
+        try:
+            from datetime import timedelta
+            end = datetime.now()
+            start = end - timedelta(days=60)
+
+            if period == "short_term":
+                # Load minute-level data for last 30 days
+                df = self.data_loader.load_stock_data(
+                    symbol, start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d"), interval="1h"
+                )
+            elif period == "medium_term":
+                # Load daily data for last 60 days
+                df = self.data_loader.load_stock_data(
+                    symbol, start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d"), interval="1d"
+                )
+            elif period == "long_term":
+                # Load weekly data for last 52 weeks
+                start = end - timedelta(days=365)
+                df = self.data_loader.load_stock_data(
+                    symbol, start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d"), interval="1d"
+                )
+            else:
+                return None
+
+            if df.empty:
+                return None
+
+            # Convert to numpy array for model input
+            feature_cols = ["open", "high", "low", "close", "volume"]
+            available_cols = [c for c in feature_cols if c in df.columns]
+            if not available_cols:
+                return None
+
+            features = df[available_cols].values.astype(np.float32)
+            return features
+        except Exception as e:
+            print(f"[PredictionTask] Error building features for {symbol}/{period}: {e}")
+            return None
 
     def predict_single_stock(self, symbol: str) -> Dict[str, Any]:
         """
@@ -52,23 +93,27 @@ class PredictionTask:
             "symbol": symbol,
             "timestamp": datetime.now().isoformat(),
             "predictions": {},
+            "model_version": self.model_manager.versions.get("short_term", {}).get("version", "unknown"),
         }
 
         try:
             # 短期预测
             short_features = self._build_features(symbol, "short_term")
-            short_preds = self.model_manager.predict_single("short_term", short_features)
-            result["predictions"]["short_term"] = short_preds
+            if short_features is not None:
+                short_preds = self.model_manager.predict_single("short_term", short_features)
+                result["predictions"]["short_term"] = short_preds
 
             # 中期预测
             medium_features = self._build_features(symbol, "medium_term")
-            medium_preds = self.model_manager.predict_single("medium_term", medium_features)
-            result["predictions"]["medium_term"] = medium_preds
+            if medium_features is not None:
+                medium_preds = self.model_manager.predict_single("medium_term", medium_features)
+                result["predictions"]["medium_term"] = medium_preds
 
             # 长期预测
             long_features = self._build_features(symbol, "long_term")
-            long_preds = self.model_manager.predict_single("long_term", long_features)
-            result["predictions"]["long_term"] = long_preds
+            if long_features is not None:
+                long_preds = self.model_manager.predict_single("long_term", long_features)
+                result["predictions"]["long_term"] = long_preds
 
         except Exception as e:
             result["error"] = str(e)
@@ -78,7 +123,7 @@ class PredictionTask:
     def run_daily_prediction(self, symbols: Optional[List[str]] = None) -> List[Dict]:
         """
         执行每日预测：遍历所有活跃股票，并发预测
-        :param symbols: 股票列表，None 则使用默认活跃股票
+        :param symbols: 股票列表，None 则使用活跃股票
         :return: 所有预测结果列表
         """
         symbols = symbols or self._get_active_stocks()
@@ -124,7 +169,7 @@ class PredictionTask:
 
     def get_summary(self, results: Optional[List[Dict]] = None) -> Dict[str, Any]:
         """生成预测摘要统计"""
-        results = results or self.prediction_history[-1]["results"] if self.prediction_history else []
+        results = results or (self.prediction_history[-1]["results"] if self.prediction_history else [])
 
         summary = {
             "total_stocks": len(results),

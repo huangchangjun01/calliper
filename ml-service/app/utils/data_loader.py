@@ -88,37 +88,80 @@ class DataLoader:
         interval: str = '1d'
     ) -> pd.DataFrame:
         """
-        从外部 API 加载数据（yfinance / akshare）
+        从外部 API 加载数据（yfinance / akshare / sina）
 
-        当前为 mock 实现，返回符合规格的随机数据
+        尝试从真实 API 获取数据，失败时返回空 DataFrame
         """
-        start_dt = datetime.strptime(start, '%Y-%m-%d')
-        end_dt = datetime.strptime(end, '%Y-%m-%d')
-        dates = pd.date_range(start=start_dt, end=end_dt, freq='B')
+        # Try Yahoo Finance API first
+        try:
+            import yfinance as yf
+            ticker = yf.Ticker(symbol)
+            df = ticker.history(start=start, end=end, interval=interval)
+            if not df.empty:
+                # Rename columns to standard format
+                df = df.rename(columns={
+                    'Open': 'open', 'High': 'high', 'Low': 'low',
+                    'Close': 'close', 'Volume': 'volume'
+                })
+                df.index.name = 'date'
+                return df
+        except Exception as e:
+            print(f"[DataLoader] Yahoo Finance failed for {symbol}: {e}")
 
-        n = len(dates)
-        base_price = 100.0
-        rng = np.random.default_rng(hash(symbol) % (2**32))
+        # Try Sina Finance API for A-shares
+        try:
+            if symbol.isdigit() and len(symbol) == 6:
+                return self._load_from_sina(symbol, start, end)
+        except Exception as e:
+            print(f"[DataLoader] Sina Finance failed for {symbol}: {e}")
 
-        # 生成带趋势的随机价格
-        returns = rng.normal(0.0005, 0.015, n)
-        prices = base_price * np.cumprod(1 + returns)
+        # Return empty DataFrame if all APIs fail
+        return pd.DataFrame()
 
-        open_prices = prices * (1 + rng.normal(0, 0.003, n))
-        high_prices = np.maximum(open_prices, prices) * (1 + np.abs(rng.normal(0, 0.005, n)))
-        low_prices = np.minimum(open_prices, prices) * (1 - np.abs(rng.normal(0, 0.005, n)))
-        volumes = rng.integers(1_000_000, 50_000_000, n)
+    def _load_from_sina(self, symbol: str, start: str, end: str) -> pd.DataFrame:
+        """从新浪财经 API 加载 A 股数据"""
+        import requests
 
-        df = pd.DataFrame({
-            'open': open_prices,
-            'high': high_prices,
-            'low': low_prices,
-            'close': prices,
-            'volume': volumes,
-        }, index=dates)
+        # Determine exchange prefix
+        if symbol.startswith(('6', '5', '9')):
+            sina_code = f"sh{symbol}"
+        else:
+            sina_code = f"sz{symbol}"
 
-        df.index.name = 'date'
-        return df
+        url = f"https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol={sina_code}&scale=240&ma=no&datalen=100"
+        try:
+            resp = requests.get(url, timeout=10, headers={
+                "Referer": "https://finance.sina.com.cn",
+                "User-Agent": "Mozilla/5.0"
+            })
+            if resp.status_code != 200:
+                return pd.DataFrame()
+
+            data = resp.json()
+            if not data:
+                return pd.DataFrame()
+
+            records = []
+            for item in data:
+                records.append({
+                    'date': item.get('day', ''),
+                    'open': float(item.get('open', 0)),
+                    'high': float(item.get('high', 0)),
+                    'low': float(item.get('low', 0)),
+                    'close': float(item.get('close', 0)),
+                    'volume': float(item.get('volume', 0)),
+                })
+
+            df = pd.DataFrame(records)
+            if not df.empty:
+                df['date'] = pd.to_datetime(df['date'])
+                df.set_index('date', inplace=True)
+                df.index.name = 'date'
+                # Filter by date range
+                df = df[(df.index >= start) & (df.index <= end)]
+            return df
+        except Exception:
+            return pd.DataFrame()
 
     def load_market_data(
         self,

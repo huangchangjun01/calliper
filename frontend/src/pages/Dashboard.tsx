@@ -44,17 +44,8 @@ export default function Dashboard() {
         }
       })
       .catch(() => {
-        // 使用模拟数据
-        const mock = [
-          { symbol: '600519.SH', name: '贵州茅台' },
-          { symbol: '000858.SZ', name: '五粮液' },
-          { symbol: '300750.SZ', name: '宁德时代' },
-          { symbol: '601318.SH', name: '中国平安' },
-          { symbol: '000333.SZ', name: '美的集团' },
-          { symbol: '600036.SH', name: '招商银行' },
-        ];
-        setWatchlist(mock);
-        if (!selectedSymbol) setSelectedSymbol(mock[0].symbol);
+        // API 请求失败，显示空列表
+        setWatchlist([]);
       })
       .finally(() => setWatchlistLoading(false));
   }, []);
@@ -64,14 +55,8 @@ export default function Dashboard() {
     api.get<MarketStatistics>('/market/statistics')
       .then(setStatistics)
       .catch(() => {
-        setStatistics({
-          limitUpCount: 42,
-          limitDownCount: 8,
-          upCount: 2156,
-          downCount: 1892,
-          flatCount: 432,
-          totalAmount: 8923456789012,
-        });
+        // API 请求失败，置空统计
+        setStatistics(null);
       });
   }, []);
 

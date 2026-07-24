@@ -229,8 +229,7 @@ func parseUserID(c *gin.Context) (uint, error) {
 
 	id, err := strconv.ParseUint(userIDStr, 10, 64)
 	if err != nil {
-		// For placeholder IDs like "placeholder-user-id", use a fallback
-		return 1, nil
+		return 0, errUnauthorized
 	}
 	return uint(id), nil
 }

@@ -38,24 +38,8 @@ export default function Market() {
     api.get<Stock[]>('/stocks')
       .then((data) => setStockList(data))
       .catch(() => {
-        const mockStocks: Stock[] = [
-          { symbol: '600519.SH', name: '贵州茅台', exchange: '上交所', industry: '白酒', marketCap: 2.35e12, listingDate: '2001-08-27', description: '' },
-          { symbol: '000858.SZ', name: '五粮液', exchange: '深交所', industry: '白酒', marketCap: 8.2e11, listingDate: '1998-04-27', description: '' },
-          { symbol: '300750.SZ', name: '宁德时代', exchange: '深交所', industry: '电池', marketCap: 9.8e11, listingDate: '2018-06-11', description: '' },
-          { symbol: '601318.SH', name: '中国平安', exchange: '上交所', industry: '保险', marketCap: 7.5e11, listingDate: '2007-03-01', description: '' },
-          { symbol: '000333.SZ', name: '美的集团', exchange: '深交所', industry: '家电', marketCap: 4.2e11, listingDate: '2013-09-18', description: '' },
-          { symbol: '600036.SH', name: '招商银行', exchange: '上交所', industry: '银行', marketCap: 8.9e11, listingDate: '2002-04-09', description: '' },
-          { symbol: '002415.SZ', name: '海康威视', exchange: '深交所', industry: '安防', marketCap: 3.1e11, listingDate: '2010-05-28', description: '' },
-          { symbol: '600276.SH', name: '恒瑞医药', exchange: '上交所', industry: '医药', marketCap: 2.8e11, listingDate: '2000-10-18', description: '' },
-          { symbol: '000651.SZ', name: '格力电器', exchange: '深交所', industry: '家电', marketCap: 2.1e11, listingDate: '1996-11-18', description: '' },
-          { symbol: '601888.SH', name: '中国中免', exchange: '上交所', industry: '旅游', marketCap: 1.9e11, listingDate: '2009-10-15', description: '' },
-          { symbol: '002594.SZ', name: '比亚迪', exchange: '深交所', industry: '汽车', marketCap: 6.8e11, listingDate: '2011-06-30', description: '' },
-          { symbol: '600900.SH', name: '长江电力', exchange: '上交所', industry: '电力', marketCap: 5.2e11, listingDate: '2003-11-18', description: '' },
-          { symbol: '000001.SZ', name: '平安银行', exchange: '深交所', industry: '银行', marketCap: 2.5e11, listingDate: '1991-04-03', description: '' },
-          { symbol: '600030.SH', name: '中信证券', exchange: '上交所', industry: '证券', marketCap: 3.3e11, listingDate: '2003-01-06', description: '' },
-          { symbol: '300059.SZ', name: '东方财富', exchange: '深交所', industry: '互联网', marketCap: 2.7e11, listingDate: '2010-03-19', description: '' },
-        ];
-        setStockList(mockStocks);
+        // API 请求失败，显示空列表
+        setStockList([]);
       })
       .finally(() => setLoading(false));
   }, []);

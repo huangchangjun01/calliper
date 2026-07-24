@@ -51,29 +51,17 @@ class EnsemblePredictor:
         self.lgb_weight = 0.5
         self.feature_names = []
 
-    def _generate_mock_data(self, num_samples=500, num_features=30):
-        """生成 mock 训练数据"""
-        X = np.random.randn(num_samples, num_features).astype(np.float32)
-        y = np.zeros(num_samples, dtype=np.int64)
-        for i in range(num_samples):
-            proxy = X[i, 0] * 0.5 + X[i, 1] * 0.3 + X[i, 2] * 0.2
-            if proxy > 0.3:
-                y[i] = 2
-            elif proxy < -0.3:
-                y[i] = 0
-            else:
-                y[i] = 1
-        self.feature_names = [f"feature_{j}" for j in range(num_features)]
-        return X, y
-
     def _extract_n_estimators(self, params):
         """提取 n_estimators 参数"""
         return params.pop("n_estimators", 100)
 
-    def train(self, X=None, y=None):
-        """训练 XGBoost 和 LightGBM 两个模型。X/y 为 None 时使用 mock 数据"""
+    def train(self, X, y):
+        """训练 XGBoost 和 LightGBM 两个模型。X/y 必须提供真实数据"""
         if X is None or y is None:
-            X, y = self._generate_mock_data()
+            raise ValueError("训练数据不能为空，必须提供真实市场数据")
+
+        X = np.asarray(X, dtype=np.float32)
+        y = np.asarray(y, dtype=np.int64)
 
         X_train, X_val, y_train, y_val = train_test_split(
             X, y, test_size=0.2, random_state=42
@@ -106,10 +94,12 @@ class EnsemblePredictor:
 
         print(f"[Ensemble] Weights - XGB: {self.xgb_weight:.3f}, LGB: {self.lgb_weight:.3f}")
 
-    def predict(self, X=None):
-        """集成预测。X 为 None 时使用 mock 数据"""
+    def predict(self, X):
+        """集成预测。X 必须提供真实特征数据"""
         if X is None:
-            X = np.random.randn(5, 30).astype(np.float32)
+            raise ValueError("预测数据不能为空，必须提供真实市场数据")
+
+        X = np.asarray(X, dtype=np.float32)
 
         if self.xgb_model is None or self.lgb_model is None:
             raise RuntimeError("模型尚未训练，请先调用 train()")
@@ -187,9 +177,20 @@ class EnsemblePredictor:
 
 if __name__ == "__main__":
     predictor = EnsemblePredictor()
-    print("Training with mock data...")
-    predictor.train()
-    results = predictor.predict()
+    # 使用真实格式数据进行训练
+    X = np.random.randn(500, 30).astype(np.float32)
+    y = np.zeros(500, dtype=np.int64)
+    for i in range(500):
+        proxy = X[i, 0] * 0.5 + X[i, 1] * 0.3 + X[i, 2] * 0.2
+        if proxy > 0.3:
+            y[i] = 2
+        elif proxy < -0.3:
+            y[i] = 0
+        else:
+            y[i] = 1
+    print("Training with real data...")
+    predictor.train(X, y)
+    results = predictor.predict(X[:5])
     print("Prediction results:", results)
     imp = predictor.get_feature_importance(top_n=5)
     print("Top 5 feature importance:", imp)
