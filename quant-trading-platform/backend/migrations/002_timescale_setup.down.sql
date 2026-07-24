@@ -1,0 +1,1 @@
+-- No need to drop hypertables as they'll be dropped with regular tables
