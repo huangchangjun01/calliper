@@ -1,0 +1,55 @@
+.predictions {
+  max-width: 100%;
+}
+
+.predictions-section {
+  margin-bottom: var(--spacing-lg);
+}
+
+.predictions-section-title {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: var(--spacing-md);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* 预测概览网格 */
+.predictions-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--spacing-lg);
+}
+
+/* 准确率统计网格 */
+.predictions-accuracy-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--spacing-lg);
+}
+
+.predictions-accuracy-line {
+  min-width: 0;
+}
+
+.predictions-accuracy-bar {
+  min-width: 0;
+}
+
+/* 响应式 */
+@media (max-width: 1024px) {
+  .predictions-overview-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .predictions-accuracy-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .predictions-section-title {
+    font-size: var(--font-size-xs);
+  }
+}

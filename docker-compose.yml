@@ -1,0 +1,217 @@
+version: "3.9"
+
+services:
+  zookeeper:
+    image: bitnami/zookeeper:3.9
+    container_name: quant-zookeeper
+    ports:
+      - "2181:2181"
+    environment:
+      - ALLOW_ANONYMOUS_LOGIN=yes
+    networks:
+      quant-network:
+        ipv4_address: 172.20.0.10
+    volumes:
+      - zookeeper-data:/bitnami/zookeeper
+    restart: unless-stopped
+
+  kafka:
+    image: bitnami/kafka:3.6
+    container_name: quant-kafka
+    ports:
+      - "9092:9092"
+    environment:
+      - KAFKA_CFG_ZOOKEEPER_CONNECT=zookeeper:2181
+      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092
+      - KAFKA_CFG_LISTENERS=PLAINTEXT://0.0.0.0:9092
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT
+      - KAFKA_CFG_INTER_BROKER_LISTENER_NAME=PLAINTEXT
+      - ALLOW_PLAINTEXT_LISTENER=yes
+    depends_on:
+      - zookeeper
+    networks:
+      quant-network:
+        ipv4_address: 172.20.0.11
+    volumes:
+      - kafka-data:/bitnami/kafka
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: quant-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: quant_trading
+      POSTGRES_USER: quant
+      POSTGRES_PASSWORD: quant123
+    networks:
+      quant-network:
+        ipv4_address: 172.20.0.20
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U quant -d quant_trading"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  timescaledb:
+    image: timescale/timescaledb:2.16.1-pg16
+    container_name: quant-timescaledb
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_DB: quant_tsdb
+      POSTGRES_USER: quant
+      POSTGRES_PASSWORD: quant123
+    networks:
+      quant-network:
+        ipv4_address: 172.20.0.21
+    volumes:
+      - timescaledb-data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U quant -d quant_tsdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: quant-redis
+    ports:
+      - "6379:6379"
+    networks:
+      quant-network:
+        ipv4_address: 172.20.0.30
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    container_name: quant-minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin123
+    command: server /data --console-address ":9001"
+    networks:
+      quant-network:
+        ipv4_address: 172.20.0.40
+    volumes:
+      - minio-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: quant-backend
+    ports:
+      - "8080:8080"
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=quant
+      - DB_PASSWORD=quant123
+      - DB_NAME=quant_trading
+      - TSDB_HOST=timescaledb
+      - TSDB_PORT=5432
+      - TSDB_USER=quant
+      - TSDB_PASSWORD=quant123
+      - TSDB_NAME=quant_tsdb
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - KAFKA_BROKERS=kafka:9092
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin123
+      - ML_SERVICE_URL=http://ml-service:8000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      timescaledb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+      minio:
+        condition: service_healthy
+    networks:
+      quant-network:
+        ipv4_address: 172.20.0.100
+    restart: unless-stopped
+
+  ml-service:
+    build:
+      context: ./ml-service
+      dockerfile: Dockerfile
+    container_name: quant-ml-service
+    ports:
+      - "8000:8000"
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=quant
+      - DB_PASSWORD=quant123
+      - DB_NAME=quant_trading
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - KAFKA_BROKERS=kafka:9092
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin123
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      quant-network:
+        ipv4_address: 172.20.0.101
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: quant-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    networks:
+      quant-network:
+        ipv4_address: 172.20.0.102
+    restart: unless-stopped
+
+networks:
+  quant-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+volumes:
+  postgres-data:
+  timescaledb-data:
+  redis-data:
+  kafka-data:
+  zookeeper-data:
+  minio-data:

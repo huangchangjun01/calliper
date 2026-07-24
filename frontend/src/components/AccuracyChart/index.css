@@ -1,0 +1,98 @@
+.accuracy-chart {
+  background: var(--bg-base);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-lg);
+  overflow: hidden;
+}
+
+.accuracy-chart-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-xxl) 0;
+  color: var(--text-tertiary);
+  font-size: var(--font-size-sm);
+}
+
+.accuracy-chart-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--spacing-sm) var(--spacing-lg);
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-container);
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+}
+
+.accuracy-chart-title {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.accuracy-chart-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-lg);
+}
+
+.accuracy-chart-periods,
+.accuracy-chart-range {
+  display: flex;
+  gap: 2px;
+  background: var(--bg-base);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  padding: 2px;
+}
+
+.accuracy-chart-period-btn,
+.accuracy-chart-range-btn {
+  padding: 2px var(--spacing-sm);
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+  border-radius: 3px;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+}
+
+.accuracy-chart-period-btn:hover,
+.accuracy-chart-range-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-container);
+}
+
+.accuracy-chart-period-btn.active,
+.accuracy-chart-range-btn.active {
+  color: var(--color-primary);
+  background: rgba(22, 119, 255, 0.1);
+  font-weight: 500;
+}
+
+.accuracy-chart-body {
+  padding: var(--spacing-md) var(--spacing-sm);
+}
+
+.accuracy-chart-summary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-md);
+  padding: var(--spacing-md);
+  border-top: 1px solid var(--border-color);
+  background: var(--bg-container);
+}
+
+.accuracy-chart-summary-label {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+}
+
+.accuracy-chart-summary-value {
+  font-size: var(--font-size-xl);
+  font-weight: 700;
+  color: var(--color-primary);
+  font-variant-numeric: tabular-nums;
+}

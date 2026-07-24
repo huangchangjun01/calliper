@@ -1,0 +1,123 @@
+.prediction-card {
+  background: var(--bg-base);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-lg);
+  overflow: hidden;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.prediction-card:hover {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 1px var(--color-primary);
+}
+
+.prediction-card-header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-md) var(--spacing-lg);
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-container);
+}
+
+.prediction-card-icon {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.prediction-card-title-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.prediction-card-title {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.prediction-card-desc {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+}
+
+.prediction-card-body {
+  display: flex;
+  align-items: center;
+  padding: var(--spacing-sm) var(--spacing-lg);
+  gap: var(--spacing-lg);
+}
+
+.prediction-card-chart {
+  flex: 1;
+  min-width: 0;
+}
+
+.prediction-card-stats {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  flex-shrink: 0;
+}
+
+.prediction-card-stat {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  padding: 2px 0;
+}
+
+.prediction-card-stat-label {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+  min-width: 28px;
+}
+
+.prediction-card-stat-value {
+  font-size: var(--font-size-base);
+  font-weight: 600;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.prediction-card-stat-percent {
+  font-size: var(--font-size-xs);
+  font-weight: 400;
+  color: var(--text-tertiary);
+  margin-left: 4px;
+}
+
+.prediction-card-stat--up .prediction-card-stat-value {
+  color: var(--color-error);
+}
+
+.prediction-card-stat--down .prediction-card-stat-value {
+  color: var(--color-success);
+}
+
+.prediction-card-stat--flat .prediction-card-stat-value {
+  color: var(--text-tertiary);
+}
+
+.prediction-card-bar {
+  display: flex;
+  height: 3px;
+  overflow: hidden;
+}
+
+.prediction-card-bar-up {
+  background: var(--color-error);
+  transition: width var(--transition-slow);
+}
+
+.prediction-card-bar-down {
+  background: var(--color-success);
+  transition: width var(--transition-slow);
+}
+
+.prediction-card-bar-flat {
+  background: var(--text-disabled);
+  transition: width var(--transition-slow);
+}

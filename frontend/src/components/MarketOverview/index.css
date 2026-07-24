@@ -1,0 +1,99 @@
+.market-overview {
+  background: var(--bg-base);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-lg);
+  padding: var(--spacing-lg);
+  margin-bottom: var(--spacing-lg);
+}
+
+.market-overview-title {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: var(--spacing-md);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.market-overview-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-xl) 0;
+  color: var(--text-tertiary);
+  font-size: var(--font-size-sm);
+}
+
+.market-overview-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: var(--spacing-md);
+}
+
+.market-overview-card {
+  background: var(--bg-container);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  padding: var(--spacing-md);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+  cursor: default;
+}
+
+.market-overview-card:hover {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 1px var(--color-primary);
+}
+
+.market-overview-card-name {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+  margin-bottom: var(--spacing-xs);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.market-overview-card-price {
+  font-size: var(--font-size-xl);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  margin-bottom: 2px;
+  color: var(--text-primary);
+}
+
+.market-overview-card-price.up {
+  color: var(--color-error);
+}
+
+.market-overview-card-price.down {
+  color: var(--color-success);
+}
+
+.market-overview-card-change {
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.market-overview-card-change.up {
+  color: var(--color-error);
+}
+
+.market-overview-card-change.down {
+  color: var(--color-success);
+}
+
+.market-overview-card-change.flat {
+  color: var(--text-tertiary);
+}
+
+.market-overview-card-icon {
+  font-size: var(--font-size-xs);
+}
+
+.market-overview-card-change-value {
+  font-variant-numeric: tabular-nums;
+}

@@ -1,0 +1,145 @@
+.failure-analysis {
+  background: var(--bg-base);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-lg);
+  overflow: hidden;
+}
+
+.failure-analysis-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-xxl) 0;
+  color: var(--text-tertiary);
+  font-size: var(--font-size-sm);
+}
+
+.failure-analysis-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-xxl) 0;
+  color: var(--text-tertiary);
+  font-size: var(--font-size-sm);
+}
+
+.failure-analysis-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--spacing-sm) var(--spacing-lg);
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-container);
+}
+
+.failure-analysis-title {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.failure-analysis-count {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+}
+
+.failure-analysis-list {
+  overflow-x: auto;
+}
+
+.failure-analysis table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.failure-analysis thead {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.failure-analysis th {
+  padding: var(--spacing-sm) var(--spacing-md);
+  font-size: var(--font-size-xs);
+  font-weight: 500;
+  color: var(--text-tertiary);
+  text-align: left;
+  background: var(--bg-container);
+  border-bottom: 1px solid var(--border-color);
+  white-space: nowrap;
+}
+
+.failure-analysis td {
+  padding: var(--spacing-sm) var(--spacing-md);
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border-color);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.failure-analysis tbody tr {
+  transition: background var(--transition-fast);
+}
+
+.failure-analysis tbody tr:hover {
+  background: var(--bg-container);
+}
+
+.failure-analysis td.col-symbol {
+  font-family: 'Courier New', monospace;
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+}
+
+.failure-analysis td.col-name {
+  font-weight: 500;
+}
+
+.failure-analysis td.col-price {
+  font-weight: 600;
+}
+
+.failure-analysis td.col-date {
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+}
+
+.failure-analysis-direction {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--font-size-xs);
+  font-weight: 500;
+}
+
+.failure-analysis-price-diff {
+  font-size: var(--font-size-xs);
+  font-weight: 400;
+  margin-left: 4px;
+  color: var(--text-tertiary);
+}
+
+.failure-analysis td.price-up {
+  color: var(--color-error);
+}
+
+.failure-analysis td.price-down {
+  color: var(--color-success);
+}
+
+.failure-analysis-reasons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+}
+
+.failure-analysis-reason-tag {
+  display: inline-block;
+  padding: 1px var(--spacing-sm);
+  font-size: var(--font-size-xs);
+  border: 1px solid;
+  border-radius: var(--border-radius);
+  white-space: nowrap;
+}

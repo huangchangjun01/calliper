@@ -1,0 +1,23 @@
+.container {
+  max-width: 1200px;
+}
+
+.title {
+  margin-bottom: var(--spacing-sm);
+  font-size: var(--font-size-xxl);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.description {
+  color: var(--text-secondary);
+  margin-bottom: var(--spacing-xl);
+  font-size: var(--font-size-base);
+}
+
+.pagination {
+  display: flex;
+  justify-content: center;
+  margin-top: var(--spacing-xl);
+  padding: var(--spacing-lg) 0;
+}

@@ -1,0 +1,493 @@
+/* ========== Trading Panel 金融终端风格 ========== */
+
+.trading-panel {
+  max-width: 1400px;
+}
+
+.trading-panel-header {
+  margin-bottom: var(--spacing-lg);
+}
+
+.trading-panel-header h1 {
+  margin-bottom: var(--spacing-xs);
+}
+
+.trading-panel-tabs {
+  margin-bottom: var(--spacing-lg);
+}
+
+.trading-panel-tabs .ant-tabs-nav {
+  margin-bottom: 0;
+}
+
+.trading-panel-tabs .ant-tabs-tab {
+  font-size: var(--font-size-lg);
+  font-weight: 500;
+  padding: var(--spacing-md) var(--spacing-xl);
+}
+
+/* ========== 真实交易两栏布局 ========== */
+
+.trading-panel-real {
+  display: grid;
+  grid-template-columns: 380px 1fr;
+  gap: var(--spacing-xl);
+  align-items: start;
+}
+
+.trading-panel-left {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xl);
+}
+
+.trading-panel-right {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xl);
+  min-width: 0;
+}
+
+/* ========== 模拟交易 ========== */
+
+.trading-panel-sim-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 300px;
+  background: var(--bg-base);
+  border-radius: var(--border-radius-lg);
+  border: 1px solid var(--border-color);
+}
+
+/* ========== OrderForm 下单表单 ========== */
+
+.order-form {
+  background: var(--bg-base);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-lg);
+  padding: var(--spacing-xl);
+}
+
+.order-form-title {
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+  margin-bottom: var(--spacing-lg);
+  padding-bottom: var(--spacing-md);
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-primary);
+}
+
+.order-form-field {
+  margin-bottom: var(--spacing-lg);
+}
+
+.order-form-label {
+  display: block;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  margin-bottom: var(--spacing-xs);
+  font-weight: 500;
+}
+
+.order-form-field .ant-radio-group {
+  width: 100%;
+}
+
+.order-form-field .ant-radio-button-wrapper {
+  flex: 1;
+  text-align: center;
+}
+
+.order-form-field .ant-radio-button-wrapper:first-child {
+  border-radius: var(--border-radius) 0 0 var(--border-radius);
+}
+
+.order-form-field .ant-radio-button-wrapper:last-child {
+  border-radius: 0 var(--border-radius) var(--border-radius) 0;
+}
+
+.order-form-estimate {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--spacing-md);
+  background: var(--bg-container);
+  border-radius: var(--border-radius);
+}
+
+.order-form-estimate-label {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.order-form-estimate-value {
+  font-size: var(--font-size-xl);
+  font-weight: 700;
+  color: var(--text-primary);
+  font-family: 'Courier New', monospace;
+}
+
+.order-form-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-xl);
+}
+
+.order-form-actions .ant-btn-primary[data-danger="true"] {
+  background: var(--color-success);
+}
+
+/* 搜索下拉选项 */
+.order-form-search-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: var(--spacing-md);
+}
+
+.order-form-search-symbol {
+  font-weight: 600;
+  font-family: 'Courier New', monospace;
+  color: var(--text-primary);
+  min-width: 90px;
+}
+
+.order-form-search-name {
+  color: var(--text-secondary);
+  flex: 1;
+}
+
+.order-form-search-price {
+  color: var(--text-secondary);
+  font-family: 'Courier New', monospace;
+}
+
+/* ========== AccountOverview 账户概览 ========== */
+
+.account-overview {
+  background: var(--bg-base);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-lg);
+  padding: var(--spacing-xl);
+}
+
+.account-overview-title {
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+  margin-bottom: var(--spacing-lg);
+  padding-bottom: var(--spacing-md);
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-primary);
+}
+
+.account-overview-empty,
+.account-overview-loading {
+  text-align: center;
+  padding: var(--spacing-xxl);
+  color: var(--text-tertiary);
+  font-size: var(--font-size-base);
+}
+
+.account-overview-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--spacing-md);
+}
+
+.account-overview-card {
+  background: var(--bg-container);
+  border-radius: var(--border-radius);
+  padding: var(--spacing-md);
+  border: 1px solid transparent;
+  transition: border-color var(--transition-fast);
+}
+
+.account-overview-card:hover {
+  border-color: var(--color-primary);
+}
+
+.account-overview-card-label {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+  margin-bottom: var(--spacing-xs);
+  text-transform: uppercase;
+}
+
+.account-overview-card-value {
+  font-size: var(--font-size-lg);
+  font-weight: 700;
+  color: var(--text-primary);
+  font-family: 'Courier New', monospace;
+}
+
+.account-overview-card-sub {
+  font-size: var(--font-size-sm);
+  margin-top: 2px;
+  font-family: 'Courier New', monospace;
+}
+
+/* ========== OrderList 订单列表 ========== */
+
+.order-list {
+  background: var(--bg-base);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-lg);
+  padding: var(--spacing-xl);
+  overflow: hidden;
+}
+
+.order-list-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--spacing-lg);
+  padding-bottom: var(--spacing-md);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.order-list-title {
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.order-symbol {
+  font-family: 'Courier New', monospace;
+  font-weight: 600;
+}
+
+/* ========== PositionList 持仓列表 ========== */
+
+.position-list {
+  background: var(--bg-base);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-lg);
+  padding: var(--spacing-xl);
+  overflow: hidden;
+}
+
+.position-list-header {
+  margin-bottom: var(--spacing-lg);
+  padding-bottom: var(--spacing-md);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.position-list-title {
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.position-symbol {
+  font-family: 'Courier New', monospace;
+  font-weight: 600;
+}
+
+/* ========== SimTradePanel 模拟交易 ========== */
+
+.sim-trade-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xl);
+}
+
+/* 状态开关 */
+.sim-trade-status {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--bg-base);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-lg);
+  padding: var(--spacing-lg) var(--spacing-xl);
+}
+
+.sim-trade-status-left {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+}
+
+.sim-trade-status-label {
+  font-size: var(--font-size-base);
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+/* 模拟账户资产 */
+.sim-trade-account {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--spacing-md);
+  background: var(--bg-base);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-lg);
+  padding: var(--spacing-xl);
+}
+
+.sim-trade-account-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.sim-trade-account-label {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+}
+
+.sim-trade-account-value {
+  font-size: var(--font-size-lg);
+  font-weight: 700;
+  font-family: 'Courier New', monospace;
+  color: var(--text-primary);
+}
+
+/* 风险控制 */
+.sim-trade-risk {
+  background: var(--bg-base);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-lg);
+  padding: var(--spacing-xl);
+}
+
+.sim-trade-section-title {
+  font-size: var(--font-size-base);
+  font-weight: 600;
+  margin-bottom: var(--spacing-lg);
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+}
+
+.sim-trade-risk-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--spacing-lg);
+}
+
+.sim-trade-risk-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.sim-trade-risk-label {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+.sim-trade-risk-value {
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+  font-family: 'Courier New', monospace;
+  color: var(--text-primary);
+}
+
+/* 决策 & 交易记录 */
+.sim-trade-section {
+  background: var(--bg-base);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-lg);
+  padding: var(--spacing-xl);
+  overflow: hidden;
+}
+
+.decision-symbol {
+  font-family: 'Courier New', monospace;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.decision-name {
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  margin-left: var(--spacing-xs);
+}
+
+/* ========== 通用交易颜色 ========== */
+
+.trade-buy {
+  color: #ff4d4f;
+  font-weight: 600;
+}
+
+.trade-sell {
+  color: #52c41a;
+  font-weight: 600;
+}
+
+.profit-up {
+  color: #ff4d4f;
+}
+
+.profit-down {
+  color: #52c41a;
+}
+
+/* ========== 表格微调 ========== */
+
+.trading-panel .ant-table {
+  font-size: var(--font-size-sm);
+}
+
+.trading-panel .ant-table-thead > tr > th {
+  background: var(--bg-container);
+  font-weight: 600;
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  padding: var(--spacing-sm) var(--spacing-md);
+}
+
+.trading-panel .ant-table-tbody > tr > td {
+  padding: var(--spacing-sm) var(--spacing-md);
+}
+
+.trading-panel .ant-table-tbody > tr:hover > td {
+  background: var(--bg-container) !important;
+}
+
+.trading-panel .ant-table-summary > tr > td {
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--bg-container);
+  font-size: var(--font-size-sm);
+}
+
+/* ========== 响应式 ========== */
+
+@media (max-width: 1024px) {
+  .trading-panel-real {
+    grid-template-columns: 1fr;
+  }
+
+  .trading-panel-left {
+    order: 1;
+  }
+
+  .trading-panel-right {
+    order: 2;
+  }
+
+  .sim-trade-account {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .sim-trade-risk-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .account-overview-cards {
+    grid-template-columns: 1fr;
+  }
+
+  .sim-trade-account {
+    grid-template-columns: 1fr 1fr;
+  }
+}

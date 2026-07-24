@@ -1,0 +1,34 @@
+.stock-accuracy-chart {
+  background: var(--bg-base);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-lg);
+  overflow: hidden;
+}
+
+.stock-accuracy-chart-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-xxl) 0;
+  color: var(--text-tertiary);
+  font-size: var(--font-size-sm);
+}
+
+.stock-accuracy-chart-header {
+  display: flex;
+  align-items: center;
+  padding: var(--spacing-sm) var(--spacing-lg);
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-container);
+}
+
+.stock-accuracy-chart-title {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.stock-accuracy-chart-body {
+  padding: var(--spacing-md) var(--spacing-sm);
+}

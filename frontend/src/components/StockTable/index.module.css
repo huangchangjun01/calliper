@@ -1,0 +1,154 @@
+.tableWrapper {
+  overflow-x: auto;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-lg);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-sm);
+}
+
+.table thead {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.table th {
+  padding: 10px 12px;
+  text-align: left;
+  font-weight: 600;
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+  background: var(--bg-container);
+  border-bottom: 1px solid var(--border-color);
+  white-space: nowrap;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.table th:last-child {
+  text-align: right;
+}
+
+.row {
+  cursor: pointer;
+  transition: background var(--transition-fast);
+  border-bottom: 1px solid color-mix(in srgb, var(--border-color) 50%, transparent);
+}
+
+.row:last-child {
+  border-bottom: none;
+}
+
+.row:hover {
+  background: var(--bg-container);
+}
+
+.table td {
+  padding: 10px 12px;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.symbol {
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  font-weight: 600;
+  color: var(--color-primary);
+}
+
+.name {
+  font-weight: 500;
+}
+
+.exchange,
+.industry {
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+}
+
+.marketCap {
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  text-align: right;
+}
+
+.price {
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  text-align: right;
+  font-weight: 500;
+}
+
+.change {
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  text-align: right;
+  font-weight: 600;
+}
+
+.up {
+  color: #e83944;
+}
+
+.down {
+  color: #00b365;
+}
+
+.flat {
+  color: var(--text-tertiary);
+}
+
+/* 骨架屏 */
+.skeletonRow td {
+  padding: 12px;
+}
+
+.skeleton {
+  display: inline-block;
+  height: 14px;
+  background: var(--bg-container);
+  border-radius: 3px;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  0% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.6;
+  }
+}
+
+/* 空状态 */
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 64px 24px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-lg);
+}
+
+.emptyIcon {
+  color: var(--text-tertiary);
+  margin-bottom: var(--spacing-lg);
+  opacity: 0.5;
+}
+
+.emptyText {
+  font-size: var(--font-size-base);
+  color: var(--text-secondary);
+  margin-bottom: var(--spacing-sm);
+}
+
+.emptyHint {
+  font-size: var(--font-size-sm);
+  color: var(--text-tertiary);
+}

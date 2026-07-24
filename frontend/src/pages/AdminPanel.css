@@ -1,0 +1,192 @@
+/* ========== 管理后台布局 ========== */
+
+.admin-panel {
+  max-width: 100%;
+}
+
+.admin-tabs {
+  background: var(--bg-base);
+  border-radius: var(--border-radius-lg);
+  border: 1px solid var(--border-color);
+  padding: 0 var(--spacing-lg);
+}
+
+.admin-tabs .ant-tabs-nav {
+  margin-bottom: 0;
+}
+
+.admin-tabs .ant-tabs-content-holder {
+  padding: var(--spacing-lg) 0;
+}
+
+/* ========== 通用 Section 样式 ========== */
+
+.admin-section {
+  margin-bottom: 0;
+}
+
+.admin-section + .admin-section {
+  margin-top: var(--spacing-xl);
+  padding-top: var(--spacing-xl);
+  border-top: 1px solid var(--border-color);
+}
+
+.admin-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--spacing-lg);
+}
+
+.admin-section-header h3 {
+  margin: 0;
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* ========== 表单弹窗样式 ========== */
+
+.admin-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+  padding-top: var(--spacing-sm);
+}
+
+.admin-form-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.admin-form-item label {
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+/* ========== 服务健康卡片 ========== */
+
+.admin-health-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--spacing-lg);
+  margin-bottom: var(--spacing-xl);
+}
+
+.admin-health-card {
+  border-radius: var(--border-radius-lg);
+}
+
+.admin-health-card .ant-card-body {
+  padding: var(--spacing-lg);
+}
+
+.admin-health-card-header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-md);
+}
+
+.admin-health-icon {
+  font-size: var(--font-size-xl);
+  color: var(--color-primary);
+}
+
+.admin-health-name {
+  font-size: var(--font-size-base);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.admin-health-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.admin-health-status {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  font-size: var(--font-size-sm);
+}
+
+.admin-health-running {
+  color: var(--color-success);
+  font-weight: 500;
+}
+
+.admin-health-stopped {
+  color: var(--color-error);
+  font-weight: 500;
+}
+
+.admin-health-metrics {
+  display: flex;
+  justify-content: space-between;
+}
+
+.admin-health-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.admin-health-label {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+}
+
+.admin-health-value {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+/* ========== 数据延迟 ========== */
+
+.admin-latency-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--spacing-lg);
+  margin-bottom: var(--spacing-xl);
+}
+
+.admin-latency-card {
+  border-radius: var(--border-radius-lg);
+}
+
+.admin-latency-card .ant-card-body {
+  padding: var(--spacing-lg);
+}
+
+.admin-latency-label {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  margin-bottom: var(--spacing-sm);
+}
+
+/* ========== 响应式 ========== */
+
+@media (max-width: 1200px) {
+  .admin-health-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 768px) {
+  .admin-tabs {
+    padding: 0 var(--spacing-sm);
+  }
+
+  .admin-health-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-latency-row {
+    grid-template-columns: 1fr;
+  }
+}

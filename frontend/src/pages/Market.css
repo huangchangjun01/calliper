@@ -1,0 +1,175 @@
+.market-page {
+  max-width: 100%;
+}
+
+.market-page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--spacing-lg);
+  flex-wrap: wrap;
+  gap: var(--spacing-md);
+}
+
+.market-page-title {
+  font-size: var(--font-size-xxl);
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.market-page-filters {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.market-search-input {
+  width: 220px;
+}
+
+.market-exchange-select {
+  width: 120px;
+}
+
+.market-page-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-md);
+  min-height: 300px;
+  color: var(--text-tertiary);
+  font-size: var(--font-size-sm);
+}
+
+.market-page-table {
+  background: var(--bg-base);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-lg);
+  overflow: hidden;
+}
+
+/* ========== 表格单元格样式 ========== */
+
+.cell-symbol {
+  font-family: 'Courier New', monospace;
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+}
+
+.cell-name {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.cell-exchange {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+}
+
+.cell-price {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  font-size: var(--font-size-base);
+  transition: background-color var(--transition-fast);
+  padding: 2px 4px;
+  border-radius: 2px;
+}
+
+.cell-price.up {
+  color: var(--color-error);
+}
+
+.cell-price.down {
+  color: var(--color-success);
+}
+
+.cell-change {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  font-size: var(--font-size-sm);
+  transition: background-color var(--transition-fast);
+  padding: 2px 4px;
+  border-radius: 2px;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.cell-change.up {
+  color: var(--color-error);
+}
+
+.cell-change.down {
+  color: var(--color-success);
+}
+
+.cell-change.flat {
+  color: var(--text-tertiary);
+}
+
+.cell-volume,
+.cell-amount,
+.cell-high,
+.cell-low {
+  font-variant-numeric: tabular-nums;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+.cell-na {
+  color: var(--text-disabled);
+  font-size: var(--font-size-sm);
+}
+
+/* ========== 闪烁动画 ========== */
+
+@keyframes cell-flash {
+  0% {
+    background-color: rgba(250, 173, 20, 0.35);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+.cell-flash {
+  animation: cell-flash 500ms ease-out;
+}
+
+/* ========== Ant Design 表格覆盖 ========== */
+
+.market-page-table .ant-table {
+  background: transparent;
+}
+
+.market-page-table .ant-table-thead > tr > th {
+  background: var(--bg-container);
+  color: var(--text-tertiary);
+  font-size: var(--font-size-xs);
+  font-weight: 500;
+  border-bottom: 1px solid var(--border-color);
+  padding: var(--spacing-sm) var(--spacing-md);
+}
+
+.market-page-table .ant-table-tbody > tr > td {
+  border-bottom: 1px solid var(--border-color);
+  padding: var(--spacing-sm) var(--spacing-md);
+}
+
+.market-page-table .ant-table-tbody > tr:hover > td {
+  background: var(--bg-container) !important;
+}
+
+.market-page-table .ant-pagination {
+  margin: var(--spacing-lg) !important;
+}
+
+.market-page-table .ant-table-thead th.ant-table-column-sort {
+  background: var(--bg-container);
+}
+
+.market-page-table .ant-table-column-sorter {
+  color: var(--text-tertiary);
+}
