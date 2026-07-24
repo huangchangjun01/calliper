@@ -1,23 +1,18 @@
-version: "3.9"
-
 services:
   zookeeper:
     image: bitnami/zookeeper:3.9
-    container_name: quant-zookeeper
-    ports:
-      - "2181:2181"
     environment:
       - ALLOW_ANONYMOUS_LOGIN=yes
     networks:
-      quant-network:
-        ipv4_address: 172.20.0.10
-    volumes:
-      - zookeeper-data:/bitnami/zookeeper
-    restart: unless-stopped
+      - quant-network
+    healthcheck:
+      test: ["CMD", "zkServer.sh", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
   kafka:
     image: bitnami/kafka:3.6
-    container_name: quant-kafka
     ports:
       - "9092:9092"
     environment:
@@ -28,17 +23,13 @@ services:
       - KAFKA_CFG_INTER_BROKER_LISTENER_NAME=PLAINTEXT
       - ALLOW_PLAINTEXT_LISTENER=yes
     depends_on:
-      - zookeeper
+      zookeeper:
+        condition: service_healthy
     networks:
-      quant-network:
-        ipv4_address: 172.20.0.11
-    volumes:
-      - kafka-data:/bitnami/kafka
-    restart: unless-stopped
+      - quant-network
 
   postgres:
     image: postgres:16-alpine
-    container_name: quant-postgres
     ports:
       - "5432:5432"
     environment:
@@ -46,11 +37,9 @@ services:
       POSTGRES_USER: quant
       POSTGRES_PASSWORD: quant123
     networks:
-      quant-network:
-        ipv4_address: 172.20.0.20
+      - quant-network
     volumes:
       - postgres-data:/var/lib/postgresql/data
-    restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U quant -d quant_trading"]
       interval: 5s
@@ -59,7 +48,6 @@ services:
 
   timescaledb:
     image: timescale/timescaledb:2.16.1-pg16
-    container_name: quant-timescaledb
     ports:
       - "5433:5432"
     environment:
@@ -67,11 +55,9 @@ services:
       POSTGRES_USER: quant
       POSTGRES_PASSWORD: quant123
     networks:
-      quant-network:
-        ipv4_address: 172.20.0.21
+      - quant-network
     volumes:
       - timescaledb-data:/var/lib/postgresql/data
-    restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U quant -d quant_tsdb"]
       interval: 5s
@@ -80,15 +66,12 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: quant-redis
     ports:
       - "6379:6379"
     networks:
-      quant-network:
-        ipv4_address: 172.20.0.30
+      - quant-network
     volumes:
       - redis-data:/data
-    restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -97,7 +80,6 @@ services:
 
   minio:
     image: minio/minio:latest
-    container_name: quant-minio
     ports:
       - "9000:9000"
       - "9001:9001"
@@ -106,11 +88,9 @@ services:
       MINIO_ROOT_PASSWORD: minioadmin123
     command: server /data --console-address ":9001"
     networks:
-      quant-network:
-        ipv4_address: 172.20.0.40
+      - quant-network
     volumes:
       - minio-data:/data
-    restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 10s
@@ -121,7 +101,6 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: quant-backend
     ports:
       - "8080:8080"
     environment:
@@ -154,15 +133,12 @@ services:
       minio:
         condition: service_healthy
     networks:
-      quant-network:
-        ipv4_address: 172.20.0.100
-    restart: unless-stopped
+      - quant-network
 
   ml-service:
     build:
       context: ./ml-service
       dockerfile: Dockerfile
-    container_name: quant-ml-service
     ports:
       - "8000:8000"
     environment:
@@ -183,35 +159,25 @@ services:
       redis:
         condition: service_healthy
     networks:
-      quant-network:
-        ipv4_address: 172.20.0.101
-    restart: unless-stopped
+      - quant-network
 
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    container_name: quant-frontend
     ports:
       - "3000:80"
     depends_on:
       - backend
     networks:
-      quant-network:
-        ipv4_address: 172.20.0.102
-    restart: unless-stopped
+      - quant-network
 
 networks:
   quant-network:
     driver: bridge
-    ipam:
-      config:
-        - subnet: 172.20.0.0/16
 
 volumes:
   postgres-data:
   timescaledb-data:
   redis-data:
-  kafka-data:
-  zookeeper-data:
   minio-data:
