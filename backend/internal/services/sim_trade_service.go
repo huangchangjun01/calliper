@@ -177,7 +177,7 @@ func (s *SimTradeService) getPredictions(ctx context.Context, stocks []models.St
 	if s.predictionService != nil {
 		var predictions []PredictionInfo
 		for _, stock := range stocks {
-			pred, err := s.predictionService.GetPrediction(ctx, stock.Symbol)
+			pred, err := s.predictionService.GetPrediction(stock.Symbol)
 			if err == nil && pred != nil {
 				direction := "hold"
 				if pred.Direction == "up" || pred.Direction == "上涨" {
@@ -192,7 +192,7 @@ func (s *SimTradeService) getPredictions(ctx context.Context, stocks []models.St
 					Direction:   direction,
 					Confidence:  pred.Confidence,
 					TargetPrice: pred.TargetPrice,
-					ExpectedRet: pred.ExpectedReturn,
+					ExpectedRet: 0,
 				})
 			}
 		}

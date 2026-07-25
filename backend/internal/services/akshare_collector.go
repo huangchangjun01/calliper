@@ -112,11 +112,11 @@ func (c *AKShareCollector) FetchRealTimeData(symbols []string) ([]MarketData, er
 			symbol = symbols[i]
 		}
 
-		price := parseFloatSafe(parts[3])
-		open := parseFloatSafe(parts[1])
-		prevClose := parseFloatSafe(parts[2])
-		high := parseFloatSafe(parts[4])
-		low := parseFloatSafe(parts[5])
+		price := decimal.NewFromFloat(parseFloatSafe(parts[3]))
+		open := decimal.NewFromFloat(parseFloatSafe(parts[1]))
+		prevClose := decimal.NewFromFloat(parseFloatSafe(parts[2]))
+		high := decimal.NewFromFloat(parseFloatSafe(parts[4]))
+		low := decimal.NewFromFloat(parseFloatSafe(parts[5]))
 		volume := parseInt64Safe(parts[8])
 		amount := parseFloatSafe(parts[9])
 
@@ -251,10 +251,10 @@ func (c *AKShareCollector) FetchHistoricalData(symbol string, start, end time.Ti
 			continue
 		}
 
-		open := parseFloatSafe(item.Open)
-		high := parseFloatSafe(item.High)
-		low := parseFloatSafe(item.Low)
-		close := parseFloatSafe(item.Close)
+		open := decimal.NewFromFloat(parseFloatSafe(item.Open))
+		high := decimal.NewFromFloat(parseFloatSafe(item.High))
+		low := decimal.NewFromFloat(parseFloatSafe(item.Low))
+		close := decimal.NewFromFloat(parseFloatSafe(item.Close))
 		volume := parseInt64Safe(item.Volume)
 
 		md := MarketData{

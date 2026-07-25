@@ -193,13 +193,6 @@ func (s *MarketDataService) getDefaultSymbols(marketCode string) []string {
 	// Try to get symbols from database
 	if s.tsdb != nil {
 		var symbols []string
-		country := marketCode
-		switch marketCode {
-		case "CN":
-			country = "CN"
-		case "US":
-			country = "US"
-		}
 		err := s.tsdb.Model(&struct {
 			Symbol string
 		}{}).

@@ -63,7 +63,12 @@ func main() {
 	if db != nil {
 		tsdb = database.GetTSDB()
 	}
-	kafkaBrokers := strings.Split(cfg.KafkaBrokers, ",")
+	// Only configure Kafka if brokers are actually set; otherwise the
+	// market data service will use a no-op producer to avoid panics.
+	var kafkaBrokers []string
+	if strings.TrimSpace(cfg.KafkaBrokers) != "" {
+		kafkaBrokers = strings.Split(cfg.KafkaBrokers, ",")
+	}
 	marketService := services.NewMarketDataService(services.MarketDataServiceConfig{
 		TSDB:         tsdb,
 		Redis:        rdb,
@@ -144,7 +149,7 @@ func main() {
 	if db != nil {
 		accountService = services.NewAccountService(db, rdb)
 		positionManager = services.NewPositionManager(db)
-		simTradeService = services.NewSimTradeService(db, predictionService, rdb, positionManager, accountService)
+		simTradeService = services.NewSimTradeService(db, predictionService, rdb, positionManager, accountService, marketService)
 		simTradeHandler = handlers.NewSimTradeHandler(simTradeService, accountService, positionManager)
 
 		// Initialize sim account on first run
@@ -217,6 +222,9 @@ func main() {
 				market.GET("/depth/:symbol", marketHandler.GetDepth)
 				market.GET("/backfill/progress", marketHandler.GetBackfillProgress)
 				market.POST("/backfill", marketHandler.TriggerBackfill)
+				market.GET("/indices", marketHandler.GetIndices)
+				market.GET("/statistics", marketHandler.GetMarketStatistics)
+				market.GET("/fundamentals/:symbol", marketHandler.GetFundamentals)
 			}
 
 			// Predictions

@@ -136,3 +136,26 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		Message: "user registered successfully",
 	})
 }
+
+// RefreshToken issues a new JWT token for the authenticated user.
+// POST /api/v1/auth/refresh
+func (h *AuthHandler) RefreshToken(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+	role := middleware.GetUserRole(c)
+	if userID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
+		return
+	}
+
+	token, err := middleware.GenerateToken(userID, role, h.JWTSecret, h.JWTExpiration)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate token"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"token":   token,
+		"user_id": userID,
+		"role":    role,
+	})
+}

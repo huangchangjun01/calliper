@@ -53,6 +53,12 @@ func (p *KafkaProducer) PublishMarketData(ctx context.Context, data []MarketData
 		return nil
 	}
 
+	// No-op mode: writer is nil, just log and return
+	if p.marketWriter == nil {
+		log.Printf("[KafkaProducer] NOOP mode: would publish %d market data messages", len(data))
+		return nil
+	}
+
 	messages := make([]kafka.Message, 0, len(data))
 	for _, md := range data {
 		payload, err := json.Marshal(md)
@@ -85,6 +91,12 @@ func (p *KafkaProducer) PublishTickData(ctx context.Context, data []MarketData) 
 		return nil
 	}
 
+	// No-op mode: writer is nil, just log and return
+	if p.tickWriter == nil {
+		log.Printf("[KafkaProducer] NOOP mode: would publish %d tick data messages", len(data))
+		return nil
+	}
+
 	messages := make([]kafka.Message, 0, len(data))
 	for _, md := range data {
 		payload, err := json.Marshal(md)
@@ -113,11 +125,15 @@ func (p *KafkaProducer) PublishTickData(ctx context.Context, data []MarketData) 
 
 // Close closes both Kafka writers.
 func (p *KafkaProducer) Close() error {
-	if err := p.marketWriter.Close(); err != nil {
-		log.Printf("[KafkaProducer] Error closing market writer: %v", err)
+	if p.marketWriter != nil {
+		if err := p.marketWriter.Close(); err != nil {
+			log.Printf("[KafkaProducer] Error closing market writer: %v", err)
+		}
 	}
-	if err := p.tickWriter.Close(); err != nil {
-		log.Printf("[KafkaProducer] Error closing tick writer: %v", err)
+	if p.tickWriter != nil {
+		if err := p.tickWriter.Close(); err != nil {
+			log.Printf("[KafkaProducer] Error closing tick writer: %v", err)
+		}
 	}
 	return nil
 }

@@ -1,10 +1,16 @@
 package handlers
 
 import (
+	"io"
+	"log"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"golang.org/x/text/encoding/simplifiedchinese"
+	"golang.org/x/text/transform"
 
 	"github.com/quant-trading/backend/internal/services"
 )
@@ -254,12 +260,26 @@ func (h *MarketHandler) GetBackfillProgress(c *gin.Context) {
 
 // detectMarketCode determines the market code from a symbol.
 func (h *MarketHandler) detectMarketCode(symbol string) string {
-	// HK stocks
-	if len(symbol) >= 5 && symbol[len(symbol)-3:] == ".HK" {
+	upper := strings.ToUpper(symbol)
+
+	// Suffix-based detection (case-insensitive)
+	if strings.HasSuffix(upper, ".SH") || strings.HasSuffix(upper, ".SZ") || strings.HasSuffix(upper, ".BJ") {
+		return "CN"
+	}
+	if strings.HasSuffix(upper, ".HK") {
 		return "HK"
 	}
+	if strings.HasSuffix(upper, ".T") {
+		return "JP"
+	}
+	if strings.HasSuffix(upper, ".L") {
+		return "UK"
+	}
+	if strings.HasSuffix(upper, ".PA") || strings.HasSuffix(upper, ".DE") || strings.HasSuffix(upper, ".AS") {
+		return "EU"
+	}
 
-	// Check if purely numeric (A-share)
+	// Pure numeric codes
 	isNumeric := true
 	for _, ch := range symbol {
 		if ch < '0' || ch > '9' {
@@ -267,10 +287,279 @@ func (h *MarketHandler) detectMarketCode(symbol string) string {
 			break
 		}
 	}
-	if isNumeric && len(symbol) == 6 {
-		return "CN"
+	if isNumeric {
+		if len(symbol) == 6 {
+			return "CN" // A-share
+		}
+		if len(symbol) == 5 {
+			return "HK" // HK 5-digit
+		}
 	}
 
-	// Default to US
+	// Pure alphabetic → US
 	return "US"
+}
+
+// ──────────────────────────────────────────────────────────────
+// Market indices (real Sina Finance API)
+// ──────────────────────────────────────────────────────────────
+
+// indexDef maps a display symbol to a Sina Finance index code and parser type.
+type indexDef struct {
+	DisplaySymbol string // e.g. "000001.SH"
+	SinaCode      string // e.g. "sh000001"
+	Type          string // "CN", "HK", "US", "EU"
+}
+
+var defaultIndices = []indexDef{
+	{"000001.SH", "sh000001", "CN"},
+	{"399001.SZ", "sz399001", "CN"},
+	{"399006.SZ", "sz399006", "CN"},
+	{"HSI", "rt_hkHSI", "HK"},
+	{"DJI", "int_dji", "US"},
+	{"IXIC", "int_nasdaq", "US"},
+	{"SPX", "int_sp500", "US"},
+	{"DAX", "b_DAX", "EU"},
+	{"CAC", "b_CAC", "EU"},
+}
+
+// IndexData is the JSON-serialisable index quote returned by the API.
+type IndexData struct {
+	Symbol        string  `json:"symbol"`
+	Name          string  `json:"name"`
+	Price         float64 `json:"price"`
+	Change        float64 `json:"change"`
+	ChangePercent float64 `json:"changePercent"`
+	Volume        int64   `json:"volume"`
+	Timestamp     int64   `json:"timestamp"`
+}
+
+// GetIndices returns real-time market index data from Sina Finance.
+// GET /api/v1/market/indices
+func (h *MarketHandler) GetIndices(c *gin.Context) {
+	// Determine which indices to fetch
+	indices := defaultIndices
+	if symParam := c.Query("symbols"); symParam != "" {
+		requested := strings.Split(symParam, ",")
+		var filtered []indexDef
+		for _, req := range requested {
+			req = strings.TrimSpace(req)
+			for _, def := range defaultIndices {
+				if strings.EqualFold(def.DisplaySymbol, req) {
+					filtered = append(filtered, def)
+					break
+				}
+			}
+		}
+		if len(filtered) > 0 {
+			indices = filtered
+		}
+	}
+
+	result := h.fetchSinaIndices(indices)
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
+		"data":    result,
+	})
+}
+
+// fetchSinaIndices calls the Sina Finance realtime API once for all indices.
+func (h *MarketHandler) fetchSinaIndices(indices []indexDef) []IndexData {
+	if len(indices) == 0 {
+		return []IndexData{}
+	}
+
+	// Build the Sina symbol list
+	var sinaCodes []string
+	for _, idx := range indices {
+		sinaCodes = append(sinaCodes, idx.SinaCode)
+	}
+	url := "https://hq.sinajs.cn/list=" + strings.Join(sinaCodes, ",")
+
+	client := &http.Client{Timeout: 8 * time.Second}
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		log.Printf("[GetIndices] failed to create request: %v", err)
+		return []IndexData{}
+	}
+	req.Header.Set("Referer", "https://finance.sina.com.cn")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Printf("[GetIndices] failed to call Sina API: %v", err)
+		return []IndexData{}
+	}
+	defer resp.Body.Close()
+
+	// Sina returns GBK-encoded content
+	reader := transform.NewReader(resp.Body, simplifiedchinese.GBK.NewDecoder())
+	body, err := io.ReadAll(reader)
+	if err != nil {
+		log.Printf("[GetIndices] failed to read response: %v", err)
+		return []IndexData{}
+	}
+
+	lines := strings.Split(string(body), "\n")
+	now := time.Now().Unix()
+
+	var result []IndexData
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		// Format: var hq_str_sh000001="...";
+		eqIdx := strings.Index(line, "=")
+		if eqIdx < 0 {
+			continue
+		}
+		sinaKey := line[:eqIdx]                         // var hq_str_sh000001
+		sinaKey = strings.TrimPrefix(sinaKey, "var hq_str_") // sh000001
+		quoteStart := strings.Index(line, "\"")
+		quoteEnd := strings.LastIndex(line, "\"")
+		if quoteStart < 0 || quoteEnd <= quoteStart {
+			continue
+		}
+		content := line[quoteStart+1 : quoteEnd]
+		if content == "" {
+			continue
+		}
+
+		// Find the matching index definition
+		var def *indexDef
+		for i := range indices {
+			if indices[i].SinaCode == sinaKey {
+				def = &indices[i]
+				break
+			}
+		}
+		if def == nil {
+			continue
+		}
+
+		if idx, ok := parseSinaIndexLine(def, content, now); ok {
+			result = append(result, idx)
+		}
+	}
+
+	return result
+}
+
+// parseSinaIndexLine parses a single Sina index line based on its type.
+func parseSinaIndexLine(def *indexDef, content string, nowTs int64) (IndexData, bool) {
+	parts := strings.Split(content, ",")
+	if len(parts) < 4 {
+		return IndexData{}, false
+	}
+
+	var name string
+	var price, change, changePercent float64
+	var volume int64
+
+	switch def.Type {
+	case "CN":
+		// 名称(0),今开(1),昨收(2),最新价(3),最高(4),最低(5),买(6),卖(7),成交量(8),...
+		name = parts[0]
+		price = parseFloatSafe(parts[3])
+		prevClose := parseFloatSafe(parts[2])
+		if prevClose > 0 {
+			change = price - prevClose
+			changePercent = change / prevClose * 100
+		}
+		if len(parts) > 8 {
+			volume = parseInt64Safe(parts[8])
+		}
+	case "HK":
+		// 代码(0),名称(1),今开(2),昨收(3),最新价(4),最高(5),最低(6),涨跌额(7),涨跌幅(8),...
+		if len(parts) < 9 {
+			return IndexData{}, false
+		}
+		name = parts[1]
+		price = parseFloatSafe(parts[4])
+		change = parseFloatSafe(parts[7])
+		changePercent = parseFloatSafe(parts[8])
+	case "US":
+		// 名称(0),最新价(1),涨跌额(2),涨跌幅(3)
+		name = parts[0]
+		price = parseFloatSafe(parts[1])
+		change = parseFloatSafe(parts[2])
+		changePercent = parseFloatSafe(parts[3])
+	case "EU":
+		// 名称(0),最新价(1),涨跌额(2),涨跌幅(3),...
+		name = parts[0]
+		price = parseFloatSafe(parts[1])
+		change = parseFloatSafe(parts[2])
+		changePercent = parseFloatSafe(parts[3])
+	default:
+		return IndexData{}, false
+	}
+
+	if price <= 0 {
+		return IndexData{}, false
+	}
+
+	return IndexData{
+		Symbol:        def.DisplaySymbol,
+		Name:          name,
+		Price:         price,
+		Change:        change,
+		ChangePercent: changePercent,
+		Volume:        volume,
+		Timestamp:     nowTs,
+	}, true
+}
+
+// GetMarketStatistics returns aggregate market statistics.
+// GET /api/v1/market/statistics
+func (h *MarketHandler) GetMarketStatistics(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
+		"data": gin.H{
+			"totalStocks":     0,
+			"advancing":       0,
+			"declining":       0,
+			"unchanged":       0,
+			"totalVolume":     0,
+			"totalAmount":     0,
+			"limitUp":         0,
+			"limitDown":       0,
+		},
+	})
+}
+
+// GetFundamentals returns fundamental data for a stock.
+// GET /api/v1/market/fundamentals/:symbol
+func (h *MarketHandler) GetFundamentals(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
+		"data": gin.H{
+			"marketCap":     0,
+			"pe":            0,
+			"pb":            0,
+			"roe":           0,
+			"debtRatio":     0,
+			"currentRatio":  0,
+		},
+	})
+}
+
+// parseFloatSafe parses a string to float64, returning 0 on error.
+func parseFloatSafe(s string) float64 {
+	v, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
+	if err != nil {
+		return 0
+	}
+	return v
+}
+
+// parseInt64Safe parses a string to int64, returning 0 on error.
+func parseInt64Safe(s string) int64 {
+	v, err := strconv.ParseInt(strings.TrimSpace(s), 10, 64)
+	if err != nil {
+		return 0
+	}
+	return v
 }
