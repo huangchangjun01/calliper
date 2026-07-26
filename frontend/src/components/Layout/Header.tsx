@@ -1,4 +1,5 @@
 import { memo, useState, useRef, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useThemeStore } from '@/stores/themeStore';
 import { useAuthStore } from '@/stores/authStore';
 
@@ -11,6 +12,7 @@ interface HeaderProps {
 const Header = memo(function Header({ collapsed, onToggle, title }: HeaderProps) {
   const { theme, toggleTheme } = useThemeStore();
   const { user, logout } = useAuthStore();
+  const navigate = useNavigate();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -103,7 +105,7 @@ const Header = memo(function Header({ collapsed, onToggle, title }: HeaderProps)
                 <span className="user-info-email">{user?.email || ''}</span>
               </div>
               <div className="dropdown-divider" />
-              <button className="dropdown-item" onClick={() => { logout(); setDropdownOpen(false); }}>
+              <button className="dropdown-item" onClick={() => { logout(); setDropdownOpen(false); navigate('/login'); }}>
                 退出登录
               </button>
             </div>
