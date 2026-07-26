@@ -6,7 +6,8 @@ export default function LoginPage() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-  const { login, isLoading } = useAuthStore();
+  const [loading, setLoading] = useState(false);
+  const login = useAuthStore((s) => s.login);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -21,11 +22,14 @@ export default function LoginPage() {
       return;
     }
 
+    setLoading(true);
     try {
       await login(username.trim(), password);
       navigate(from, { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : '登录失败，请重试');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -50,7 +54,7 @@ export default function LoginPage() {
               placeholder="请输入用户名"
               autoComplete="username"
               autoFocus
-              disabled={isLoading}
+              disabled={loading}
             />
           </div>
 
@@ -63,16 +67,16 @@ export default function LoginPage() {
               onChange={(e) => setPassword(e.target.value)}
               placeholder="请输入密码"
               autoComplete="current-password"
-              disabled={isLoading}
+              disabled={loading}
             />
           </div>
 
           <button
             type="submit"
             className="login-btn"
-            disabled={isLoading}
+            disabled={loading}
           >
-            {isLoading ? '登录中...' : '登 录'}
+            {loading ? '登录中...' : '登 录'}
           </button>
         </form>
       </div>

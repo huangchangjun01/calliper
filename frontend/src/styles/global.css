@@ -580,6 +580,8 @@ button.dropdown-item:hover {
 }
 
 .login-card {
+  position: relative;
+  z-index: 1;
   width: 400px;
   max-width: 90vw;
   padding: 48px 40px;
