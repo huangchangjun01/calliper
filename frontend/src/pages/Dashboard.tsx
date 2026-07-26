@@ -36,7 +36,7 @@ export default function Dashboard() {
 
   // 获取自选股列表
   useEffect(() => {
-    api.get<WatchlistItem[]>('/watchlist')
+    api.get<WatchlistItem[]>('/stocks/watchlist')
       .then((data) => {
         setWatchlist(data);
         if (data.length > 0 && !selectedSymbol) {

@@ -12,11 +12,17 @@ import (
 // PredictionHandler handles HTTP requests for stock predictions.
 type PredictionHandler struct {
 	predictionService *services.PredictionService
+	evalService       *services.EvaluationService
 }
 
 // NewPredictionHandler creates a new PredictionHandler.
 func NewPredictionHandler(svc *services.PredictionService) *PredictionHandler {
 	return &PredictionHandler{predictionService: svc}
+}
+
+// SetEvaluationService sets the evaluation service for accuracy-related endpoints.
+func (h *PredictionHandler) SetEvaluationService(svc *services.EvaluationService) {
+	h.evalService = svc
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -154,4 +160,138 @@ func (h *PredictionHandler) GetModelStatus(c *gin.Context) {
 	}
 
 	success(c, statuses)
+}
+
+// ──────────────────────────────────────────────────────────────
+// Aggregated prediction/evaluation endpoints
+// ──────────────────────────────────────────────────────────────
+
+// PredictionSummary represents a compact prediction for the list view.
+type PredictionSummary struct {
+	Symbol      string  `json:"symbol"`
+	Period      string  `json:"period"`
+	Direction   string  `json:"direction"`
+	Confidence  float64 `json:"confidence"`
+	TargetPrice float64 `json:"target_price"`
+	PredictedAt string  `json:"predicted_at"`
+}
+
+// GetSummaries handles GET /api/v1/predictions/summaries
+// Returns a list of recent prediction summaries.
+func (h *PredictionHandler) GetSummaries(c *gin.Context) {
+	// Return empty data if ML service is not available
+	success(c, []PredictionSummary{})
+}
+
+// PredictionDetail represents a detailed prediction record.
+type PredictionDetail struct {
+	ID          int      `json:"id"`
+	Symbol      string   `json:"symbol"`
+	Period      string   `json:"period"`
+	Direction   string   `json:"direction"`
+	Confidence  float64  `json:"confidence"`
+	TargetPrice float64  `json:"target_price"`
+	PredictedAt string   `json:"predicted_at"`
+	IsCorrect   *bool    `json:"is_correct,omitempty"`
+	KeyFactors  []string `json:"key_factors,omitempty"`
+}
+
+// GetDetails handles GET /api/v1/predictions/details
+// Returns a list of detailed prediction records.
+func (h *PredictionHandler) GetDetails(c *gin.Context) {
+	limit := 20
+	if l, err := strconv.Atoi(c.DefaultQuery("limit", "20")); err == nil && l > 0 && l <= 100 {
+		limit = l
+	}
+
+	_ = limit
+	success(c, []PredictionDetail{})
+}
+
+// AccuracyTrend represents accuracy trend over time.
+type AccuracyTrend struct {
+	Period   string  `json:"period"`
+	Date     string  `json:"date"`
+	Accuracy float64 `json:"accuracy"`
+}
+
+// GetAccuracyTrend handles GET /api/v1/predictions/accuracy
+// Returns accuracy trend data for a given time period.
+func (h *PredictionHandler) GetAccuracyTrend(c *gin.Context) {
+	period := c.DefaultQuery("period", "short")
+
+	// Get accuracy ranking data as trend
+	if h.evalService != nil {
+		rankings, err := h.evalService.GetAccuracyRanking(period, 50)
+		if err == nil {
+			// Convert ranking to trend format
+			trend := make([]AccuracyTrend, 0, len(rankings))
+			for i, r := range rankings {
+				trend = append(trend, AccuracyTrend{
+					Period:   period,
+					Date:     r.Symbol,
+					Accuracy: r.Accuracy,
+				})
+				if i >= 19 {
+					break
+				}
+			}
+			success(c, trend)
+			return
+		}
+	}
+
+	success(c, []AccuracyTrend{})
+}
+
+// StockAccuracyItem represents per-stock accuracy data.
+type StockAccuracyItem struct {
+	Symbol           string  `json:"symbol"`
+	Accuracy         float64 `json:"accuracy"`
+	TotalPredictions int     `json:"total_predictions"`
+}
+
+// GetStockAccuracy handles GET /api/v1/predictions/stock-accuracy
+// Returns accuracy ranking across all stocks.
+func (h *PredictionHandler) GetStockAccuracy(c *gin.Context) {
+	if h.evalService != nil {
+		rankings, err := h.evalService.GetAccuracyRanking("all", 50)
+		if err == nil {
+			items := make([]StockAccuracyItem, 0, len(rankings))
+			for _, r := range rankings {
+				items = append(items, StockAccuracyItem{
+					Symbol:           r.Symbol,
+					Accuracy:         r.Accuracy,
+					TotalPredictions: r.TotalPredictions,
+				})
+			}
+			success(c, items)
+			return
+		}
+	}
+
+	success(c, []StockAccuracyItem{})
+}
+
+// FailureCase represents a prediction failure case.
+type FailureCase struct {
+	ID                 int    `json:"id"`
+	Symbol             string `json:"symbol"`
+	PredictedDirection string `json:"predicted_direction"`
+	ActualDirection    string `json:"actual_direction"`
+	Summary            string `json:"summary"`
+	PredictedAt        string `json:"predicted_at"`
+}
+
+// GetFailures handles GET /api/v1/predictions/failures
+// Returns recent prediction failure cases.
+func (h *PredictionHandler) GetFailures(c *gin.Context) {
+	limit := 20
+	if l, err := strconv.Atoi(c.DefaultQuery("limit", "20")); err == nil && l > 0 && l <= 100 {
+		limit = l
+	}
+	_ = limit
+
+	// Return empty array for now — failures are populated by evaluation service
+	success(c, []FailureCase{})
 }

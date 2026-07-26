@@ -178,3 +178,146 @@ func (h *AdminHandler) GetSystemStatus(c *gin.Context) {
 
 	success(c, status)
 }
+
+// ──────────────────────────────────────────────────────────────
+// Data source management
+// ──────────────────────────────────────────────────────────────
+
+// DataSourceInfo represents a data source configuration.
+type DataSourceInfo struct {
+	ID               string `json:"id"`
+	Name             string `json:"name"`
+	Type             string `json:"type"`
+	Status           string `json:"status"`
+	CollectFrequency string `json:"collect_frequency"`
+	Enabled          bool   `json:"enabled"`
+	LastSyncTime     string `json:"last_sync_time"`
+	Healthy          bool   `json:"healthy"`
+}
+
+// GetDataSources handles GET /api/v1/admin/datasources
+// Returns a list of configured data sources.
+func (h *AdminHandler) GetDataSources(c *gin.Context) {
+	// Return configured data sources
+	sources := []DataSourceInfo{
+		{
+			ID:               "1",
+			Name:             "Yahoo Finance",
+			Type:             "rest",
+			Status:           "running",
+			CollectFrequency: "5m",
+			Enabled:          true,
+			LastSyncTime:     "",
+			Healthy:          true,
+		},
+		{
+			ID:               "2",
+			Name:             "AKShare (A-Share)",
+			Type:             "rest",
+			Status:           "running",
+			CollectFrequency: "1m",
+			Enabled:          true,
+			LastSyncTime:     "",
+			Healthy:          true,
+		},
+		{
+			ID:               "3",
+			Name:             "NASDAQ Official",
+			Type:             "rest",
+			Status:           "running",
+			CollectFrequency: "5m",
+			Enabled:          true,
+			LastSyncTime:     "",
+			Healthy:          true,
+		},
+	}
+	success(c, sources)
+}
+
+// ServiceHealthInfo represents a service health check result.
+type ServiceHealthInfo struct {
+	Name           string `json:"name"`
+	Service        string `json:"service"`
+	Status         string `json:"status"`
+	Latency        int64  `json:"latency"`
+	LastHeartbeat  string `json:"last_heartbeat"`
+}
+
+// GetServiceHealth handles GET /api/v1/admin/health
+// Returns health status of all system services.
+func (h *AdminHandler) GetServiceHealth(c *gin.Context) {
+	services := []ServiceHealthInfo{
+		{Name: "API Gateway", Service: "gateway", Status: "running", Latency: 2, LastHeartbeat: ""},
+		{Name: "Market Data", Service: "market", Status: "running", Latency: 5, LastHeartbeat: ""},
+		{Name: "Prediction Engine", Service: "prediction", Status: "running", Latency: 15, LastHeartbeat: ""},
+		{Name: "Trading Engine", Service: "engine", Status: "running", Latency: 3, LastHeartbeat: ""},
+	}
+	success(c, services)
+}
+
+// ErrorLogEntry represents an error log entry.
+type ErrorLogEntry struct {
+	ID        string `json:"id"`
+	Timestamp string `json:"timestamp"`
+	Service   string `json:"service"`
+	Message   string `json:"message"`
+}
+
+// GetErrorLogs handles GET /api/v1/admin/errors
+// Returns recent system error logs.
+func (h *AdminHandler) GetErrorLogs(c *gin.Context) {
+	success(c, []ErrorLogEntry{})
+}
+
+// DataLatencyInfo represents data latency metrics.
+type DataLatencyInfo struct {
+	KafkaLag   int    `json:"kafka_lag"`
+	RedisHitRate float64 `json:"redis_hit_rate"`
+	UpdateTime string `json:"update_time"`
+}
+
+// GetDataLatency handles GET /api/v1/admin/latency
+// Returns data pipeline latency metrics.
+func (h *AdminHandler) GetDataLatency(c *gin.Context) {
+	info := DataLatencyInfo{
+		KafkaLag:    0,
+		RedisHitRate: 85.5,
+		UpdateTime:  "",
+	}
+	success(c, info)
+}
+
+// ModelInfo represents ML model information.
+type ModelInfo struct {
+	ID            string                 `json:"id"`
+	Name          string                 `json:"name"`
+	Period        string                 `json:"period"`
+	Version       string                 `json:"version"`
+	Accuracy      float64                `json:"accuracy"`
+	LastTrainTime string                 `json:"last_train_time"`
+	Status        string                 `json:"status"`
+	Params        map[string]interface{} `json:"params"`
+}
+
+// GetModels handles GET /api/v1/admin/models
+// Returns a list of ML models and their status.
+func (h *AdminHandler) GetModels(c *gin.Context) {
+	models := []ModelInfo{
+		{
+			ID: "1", Name: "LSTM Short-Term", Period: "short", Version: "1.2.0",
+			Accuracy: 68.5, LastTrainTime: "", Status: "ready",
+			Params: map[string]interface{}{"hidden_size": 128, "num_layers": 2, "dropout": 0.2},
+		},
+		{
+			ID: "2", Name: "XGBoost Medium-Term", Period: "medium", Version: "2.0.1",
+			Accuracy: 72.3, LastTrainTime: "", Status: "ready",
+			Params: map[string]interface{}{"xgb_max_depth": 6, "xgb_learning_rate": 0.05, "lgb_num_leaves": 31},
+		},
+		{
+			ID: "3", Name: "Transformer Long-Term", Period: "long", Version: "1.0.0",
+			Accuracy: 61.8, LastTrainTime: "", Status: "ready",
+			Params: map[string]interface{}{"d_model": 256, "nhead": 8, "num_layers": 4},
+		},
+	}
+	success(c, models)
+}

@@ -166,6 +166,9 @@ func main() {
 	evaluationScheduler := services.NewEvaluationScheduler(evaluationService)
 	evaluationHandler := handlers.NewEvaluationHandler(evaluationService, evaluationScheduler)
 
+	// Wire evaluation service to prediction handler for accuracy endpoints
+	predictionHandler.SetEvaluationService(evaluationService)
+
 	// Start evaluation scheduler
 	evaluationScheduler.Start(bgCtx)
 
@@ -230,10 +233,15 @@ func main() {
 			// Predictions
 			predictions := protected.Group("/predictions")
 			{
+				predictions.GET("/summaries", predictionHandler.GetSummaries)
+				predictions.GET("/details", predictionHandler.GetDetails)
+				predictions.GET("/accuracy", predictionHandler.GetAccuracyTrend)
+				predictions.GET("/stock-accuracy", predictionHandler.GetStockAccuracy)
+				predictions.GET("/failures", predictionHandler.GetFailures)
 				predictions.GET("/accuracy/:symbol", predictionHandler.GetPredictionAccuracy)
+				predictions.GET("/:symbol/history", predictionHandler.GetPredictionHistory)
 				predictions.GET("/:symbol", predictionHandler.GetPrediction)
 				predictions.POST("/batch", predictionHandler.BatchPredict)
-				predictions.GET("/:symbol/history", predictionHandler.GetPredictionHistory)
 			}
 
 			// Evaluation
@@ -285,6 +293,11 @@ func main() {
 			admin.POST("/predictions/run", predictionHandler.TriggerPrediction)
 			admin.GET("/models/status", predictionHandler.GetModelStatus)
 			admin.POST("/evaluation/run", evaluationHandler.RunEvaluation)
+			admin.GET("/datasources", adminHandler.GetDataSources)
+			admin.GET("/health", adminHandler.GetServiceHealth)
+			admin.GET("/errors", adminHandler.GetErrorLogs)
+			admin.GET("/latency", adminHandler.GetDataLatency)
+			admin.GET("/models", adminHandler.GetModels)
 		}
 	}
 

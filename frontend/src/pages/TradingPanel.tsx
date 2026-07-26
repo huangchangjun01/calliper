@@ -43,7 +43,7 @@ export default function TradingPanel() {
   });
 
   const placeOrderMutation = useMutation({
-    mutationFn: (order: OrderRequest) => api.post('/trading/orders', order),
+    mutationFn: (order: OrderRequest) => api.post('/trading/order', order),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['orders'] });
       queryClient.invalidateQueries({ queryKey: ['account'] });
@@ -52,7 +52,7 @@ export default function TradingPanel() {
   });
 
   const cancelOrderMutation = useMutation({
-    mutationFn: (orderId: string) => api.delete(`/trading/orders/${orderId}`),
+    mutationFn: (orderId: string) => api.delete(`/trading/order/${orderId}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['orders'] });
     },
@@ -70,13 +70,19 @@ export default function TradingPanel() {
 
   const { data: simStatus, isLoading: simLoading } = useQuery({
     queryKey: ['simStatus'],
-    queryFn: () => api.get<SimStatus>('/trading/sim/status'),
+    queryFn: () => api.get<SimStatus>('/sim/status'),
     enabled: activeTab === 'sim',
     refetchInterval: 15000,
   });
 
   const toggleSimMutation = useMutation({
-    mutationFn: () => api.post('/trading/sim/toggle'),
+    mutationFn: () => {
+      // 根据当前状态切换 start/stop
+      const currentStatus = simStatus?.status;
+      return currentStatus === 'running'
+        ? api.post('/sim/stop')
+        : api.post('/sim/start');
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['simStatus'] });
     },

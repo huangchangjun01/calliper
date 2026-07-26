@@ -35,7 +35,7 @@ export default function Market() {
   const { stocks, changedSymbols } = useStockQuote(symbols);
 
   useEffect(() => {
-    api.get<Stock[]>('/stocks')
+    api.get<Stock[]>('/stocks/search', { page: 1, pageSize: 200 })
       .then((data) => setStockList(data))
       .catch(() => {
         // API 请求失败，显示空列表

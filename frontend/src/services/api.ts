@@ -1,6 +1,6 @@
 import type { ApiResponse } from '@/types';
 
-const BASE_URL = '/api';
+const BASE_URL = '/api/v1';
 
 let authToken: string | null = null;
 

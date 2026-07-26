@@ -61,7 +61,7 @@ export default function StockDetail() {
   // 获取盘口深度
   useEffect(() => {
     if (!symbol) return;
-    api.get<DepthData>(`/stocks/${symbol}/depth`)
+    api.get<DepthData>(`/market/depth/${symbol}`)
       .then(setDepth)
       .catch(() => {
         setDepth({
@@ -86,7 +86,7 @@ export default function StockDetail() {
   // 获取基本面信息
   useEffect(() => {
     if (!symbol) return;
-    api.get<Fundamentals>(`/stocks/${symbol}/fundamentals`)
+    api.get<Fundamentals>(`/market/fundamentals/${symbol}`)
       .then(setFundamentals)
       .catch(() => {
         setFundamentals({
