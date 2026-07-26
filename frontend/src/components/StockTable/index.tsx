@@ -8,7 +8,8 @@ interface StockTableProps {
   onRowClick?: (symbol: string) => void;
 }
 
-function formatMarketCap(marketCap: number): string {
+function formatMarketCap(marketCap: number | undefined | null): string {
+  if (marketCap == null || marketCap <= 0) return '-';
   if (marketCap >= 1e12) {
     return (marketCap / 1e12).toFixed(2) + '万亿';
   }

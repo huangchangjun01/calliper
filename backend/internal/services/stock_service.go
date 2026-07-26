@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -151,8 +152,12 @@ func (s *StockService) SearchStocks(query string, marketCode string, limit int, 
 	}
 
 	if marketCode != "" {
-		db = db.Joins("JOIN markets ON markets.id = stocks.market_id").
-			Where("markets.code = ?", marketCode)
+		// Support comma-separated market codes (e.g. "SSE,SZSE,BSE")
+		codes := splitAndTrim(marketCode, ",")
+		if len(codes) > 0 {
+			db = db.Joins("JOIN markets ON markets.id = stocks.market_id").
+				Where("markets.code IN ?", codes)
+		}
 	}
 
 	var total int64
@@ -166,6 +171,18 @@ func (s *StockService) SearchStocks(query string, marketCode string, limit int, 
 	}
 
 	return stocks, total, nil
+}
+
+// splitAndTrim splits a string by separator and trims whitespace from each part.
+func splitAndTrim(s, sep string) []string {
+	parts := make([]string, 0)
+	for _, p := range strings.Split(s, sep) {
+		trimmed := strings.TrimSpace(p)
+		if trimmed != "" {
+			parts = append(parts, trimmed)
+		}
+	}
+	return parts
 }
 
 // GetStocksByMarket returns all active stocks for a given market, paginated.

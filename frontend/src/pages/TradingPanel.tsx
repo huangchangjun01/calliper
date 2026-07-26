@@ -78,8 +78,8 @@ export default function TradingPanel() {
   const toggleSimMutation = useMutation({
     mutationFn: () => {
       // 根据当前状态切换 start/stop
-      const currentStatus = simStatus?.status;
-      return currentStatus === 'running'
+      const isRunning = simStatus?.running;
+      return isRunning
         ? api.post('/sim/stop')
         : api.post('/sim/start');
     },

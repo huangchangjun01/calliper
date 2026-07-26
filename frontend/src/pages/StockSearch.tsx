@@ -16,12 +16,30 @@ async function fetchStocks(params: {
   page: number;
   pageSize: number;
 }): Promise<PaginatedData<StockSearchItem>> {
-  return api.get<PaginatedData<StockSearchItem>>('/stocks/search', {
-    keyword: params.keyword || undefined,
-    exchange: params.exchange || undefined,
+  const data = await api.get<{ stocks: Record<string, unknown>[]; total: number; limit: number; offset: number }>('/stocks/search', {
+    q: params.keyword || undefined,
+    market: params.exchange || undefined,
+    limit: params.pageSize,
+    offset: (params.page - 1) * params.pageSize,
+  });
+
+  // Map backend snake_case to frontend camelCase
+  const items: StockSearchItem[] = (data.stocks ?? []).map((s: Record<string, unknown>) => ({
+    symbol: (s.symbol as string) ?? '',
+    name: (s.name as string) ?? '',
+    exchange: (s.exchange as string) ?? '',
+    industry: (s.industry as string) ?? '',
+    marketCap: (s.market_cap as number) ?? 0,
+    price: (s.price as number) ?? 0,
+    changePercent: (s.changePercent as number) ?? 0,
+  }));
+
+  return {
+    items,
+    total: data.total ?? 0,
     page: params.page,
     pageSize: params.pageSize,
-  });
+  };
 }
 
 export default function StockSearch() {

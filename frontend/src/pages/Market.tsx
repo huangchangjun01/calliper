@@ -35,10 +35,21 @@ export default function Market() {
   const { stocks, changedSymbols } = useStockQuote(symbols);
 
   useEffect(() => {
-    api.get<Stock[]>('/stocks/search', { page: 1, pageSize: 200 })
-      .then((data) => setStockList(data))
+    api.get<{ stocks: Record<string, unknown>[]; total: number }>('/stocks/search', { limit: 200, offset: 0 })
+      .then((data) => {
+        // Map backend snake_case to frontend camelCase
+        const mapped: Stock[] = (data.stocks ?? []).map((s: Record<string, unknown>) => ({
+          symbol: (s.symbol as string) ?? '',
+          name: (s.name as string) ?? '',
+          exchange: (s.exchange as string) ?? '',
+          industry: (s.industry as string) ?? '',
+          marketCap: (s.market_cap as number) ?? 0,
+          listingDate: (s.created_at as string) ?? '',
+          description: '',
+        }));
+        setStockList(mapped);
+      })
       .catch(() => {
-        // API 请求失败，显示空列表
         setStockList([]);
       })
       .finally(() => setLoading(false));
