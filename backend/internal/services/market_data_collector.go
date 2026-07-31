@@ -1,7 +1,6 @@
 package services
 
 import (
-	"net"
 	"net/http"
 	"time"
 )
@@ -9,20 +8,16 @@ import (
 // newPooledHTTPClient creates an HTTP client with connection pool limits
 // to prevent unbounded goroutine and connection growth during periodic polling.
 func newPooledHTTPClient() *http.Client {
+	// Clone default transport to preserve its DNS/TLS/HTTP2 settings,
+	// only overriding the connection pool limits.
+	dt := http.DefaultTransport.(*http.Transport).Clone()
+	dt.MaxIdleConns = 10
+	dt.MaxIdleConnsPerHost = 4
+	dt.MaxConnsPerHost = 8
+	dt.IdleConnTimeout = 60 * time.Second
 	return &http.Client{
-		Timeout: 10 * time.Second,
-		Transport: &http.Transport{
-			DialContext: (&net.Dialer{
-				Timeout:   5 * time.Second,
-				KeepAlive: 30 * time.Second,
-			}).DialContext,
-			MaxIdleConns:        10,
-			MaxIdleConnsPerHost: 4,
-			MaxConnsPerHost:     8,
-			IdleConnTimeout:     60 * time.Second,
-			TLSHandshakeTimeout: 5 * time.Second,
-			DisableCompression:  true, // Sina responses are small text, no need to decompress
-		},
+		Timeout:   15 * time.Second,
+		Transport: dt,
 	}
 }
 

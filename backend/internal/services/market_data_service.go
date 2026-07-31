@@ -142,9 +142,7 @@ func (s *MarketDataService) runCollectionLoop(ctx context.Context, marketCode st
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if s.isTradingHours(marketCode) {
-				s.CollectMarketData(ctx, marketCode)
-			}
+			s.CollectMarketData(ctx, marketCode)
 		}
 	}
 }
@@ -160,35 +158,67 @@ func (s *MarketDataService) getCollectionInterval(marketCode string) time.Durati
 }
 
 // isTradingHours checks if the given market is currently in trading hours.
+// Uses market-specific timezones for accurate trading hour calculation.
 func (s *MarketDataService) isTradingHours(marketCode string) bool {
-	now := time.Now()
-	weekday := now.Weekday()
-
-	// Skip weekends
-	if weekday == time.Saturday || weekday == time.Sunday {
-		return false
-	}
-
 	switch marketCode {
 	case "CN":
-		// A-share: 9:30-11:30, 13:00-15:00 CST
-		h, m := now.Hour(), now.Minute()
-		morning := (h == 9 && m >= 30) || (h == 10) || (h == 11 && m <= 30)
-		afternoon := (h >= 13 && h < 15)
-		return morning || afternoon
+		return s.isCNTradingHours()
 	case "HK":
-		// HK: 9:30-12:00, 13:00-16:00 HKT
-		h, m := now.Hour(), now.Minute()
-		morning := (h == 9 && m >= 30) || (h == 10 || h == 11) || (h == 12 && m == 0)
-		afternoon := (h >= 13 && h < 16)
-		return morning || afternoon
+		return s.isHKTradingHours()
 	case "US":
-		// US: 9:30-16:00 EST (roughly 21:30-04:00 CST)
-		h := now.Hour()
-		return h >= 21 || h < 4
+		return s.isUSTradingHours()
 	default:
 		return true
 	}
+}
+
+// isCNTradingHours checks A-share trading hours: 9:30-11:30, 13:00-15:00 CST.
+func (s *MarketDataService) isCNTradingHours() bool {
+	loc, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		return true // fallback: always collect if timezone lookup fails
+	}
+	now := time.Now().In(loc)
+	weekday := now.Weekday()
+	if weekday == time.Saturday || weekday == time.Sunday {
+		return false
+	}
+	h, m := now.Hour(), now.Minute()
+	morning := (h == 9 && m >= 30) || (h == 10) || (h == 11 && m <= 30)
+	afternoon := (h >= 13 && h < 15)
+	return morning || afternoon
+}
+
+// isHKTradingHours checks HK trading hours: 9:30-12:00, 13:00-16:00 HKT.
+func (s *MarketDataService) isHKTradingHours() bool {
+	loc, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		return true
+	}
+	now := time.Now().In(loc)
+	weekday := now.Weekday()
+	if weekday == time.Saturday || weekday == time.Sunday {
+		return false
+	}
+	h, m := now.Hour(), now.Minute()
+	morning := (h == 9 && m >= 30) || (h == 10 || h == 11) || (h == 12 && m == 0)
+	afternoon := (h >= 13 && h < 16)
+	return morning || afternoon
+}
+
+// isUSTradingHours checks US trading hours: 9:30-16:00 EST.
+func (s *MarketDataService) isUSTradingHours() bool {
+	loc, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		return true
+	}
+	now := time.Now().In(loc)
+	weekday := now.Weekday()
+	if weekday == time.Saturday || weekday == time.Sunday {
+		return false
+	}
+	h, m := now.Hour(), now.Minute()
+	return (h == 9 && m >= 30) || (h >= 10 && h < 16)
 }
 
 // getDefaultSymbols returns symbols for a market, pulling from database first
