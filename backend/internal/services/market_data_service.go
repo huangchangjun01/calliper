@@ -95,16 +95,21 @@ func (s *MarketDataService) StopCollection() {
 
 // CollectMarketData collects real-time market data for a specific market.
 func (s *MarketDataService) CollectMarketData(ctx context.Context, marketCode string) ([]MarketData, error) {
+	defaultSymbols := s.getDefaultSymbols(marketCode)
+	return s.CollectMarketDataForSymbols(ctx, marketCode, defaultSymbols)
+}
+
+// CollectMarketDataForSymbols collects real-time market data for specific symbols in a market.
+func (s *MarketDataService) CollectMarketDataForSymbols(ctx context.Context, marketCode string, symbols []string) ([]MarketData, error) {
 	s.mu.RLock()
 	collector, exists := s.collectors[marketCode]
 	s.mu.RUnlock()
 
-	if !exists {
+	if !exists || len(symbols) == 0 {
 		return nil, nil
 	}
 
-	defaultSymbols := s.getDefaultSymbols(marketCode)
-	data, err := collector.FetchRealTimeData(defaultSymbols)
+	data, err := collector.FetchRealTimeData(symbols)
 	if err != nil {
 		log.Printf("[MarketDataService] Failed to fetch data for %s: %v", marketCode, err)
 		return nil, err

@@ -24,6 +24,8 @@ class WebSocketClient {
     if (this.ws?.readyState === WebSocket.OPEN) return;
 
     this.intentionalClose = false;
+    // 每次连接时重新获取 token，确保登录后能带上
+    this.url = getWsUrl();
     this.ws = new WebSocket(this.url);
 
     this.ws.onopen = () => {
@@ -204,8 +206,13 @@ class WebSocketClient {
 }
 
 // 创建单例
-const wsClient = new WebSocketClient(
-  `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`
-);
+function getWsUrl(): string {
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const base = `${protocol}//${window.location.host}/ws`;
+  const token = localStorage.getItem('auth_token');
+  return token ? `${base}?token=${encodeURIComponent(token)}` : base;
+}
+
+const wsClient = new WebSocketClient(getWsUrl());
 
 export default wsClient;

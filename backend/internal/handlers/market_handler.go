@@ -41,20 +41,17 @@ func (h *MarketHandler) GetRealtime(c *gin.Context) {
 	// Determine market code from symbol
 	marketCode := h.detectMarketCode(symbol)
 
-	data, err := h.marketService.CollectMarketData(c.Request.Context(), marketCode)
+	data, err := h.marketService.CollectMarketDataForSymbols(c.Request.Context(), marketCode, []string{symbol})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch market data: " + err.Error()})
 		return
 	}
 
-	// Filter for the requested symbol
-	for _, md := range data {
-		if md.Symbol == symbol {
-			c.JSON(http.StatusOK, gin.H{
-				"data": md,
-			})
-			return
-		}
+	if len(data) > 0 {
+		c.JSON(http.StatusOK, gin.H{
+			"data": data[0],
+		})
+		return
 	}
 
 	c.JSON(http.StatusNotFound, gin.H{"error": "symbol not found"})
@@ -74,6 +71,11 @@ func (h *MarketHandler) GetRealtimeBatch(c *gin.Context) {
 		return
 	}
 
+	// Limit to 50 symbols to avoid excessive API calls
+	if len(req.Symbols) > 50 {
+		req.Symbols = req.Symbols[:50]
+	}
+
 	// Group symbols by market code
 	marketGroups := make(map[string][]string)
 	for _, symbol := range req.Symbols {
@@ -82,8 +84,8 @@ func (h *MarketHandler) GetRealtimeBatch(c *gin.Context) {
 	}
 
 	var allData []services.MarketData
-	for code := range marketGroups {
-		data, err := h.marketService.CollectMarketData(c.Request.Context(), code)
+	for code, symbols := range marketGroups {
+		data, err := h.marketService.CollectMarketDataForSymbols(c.Request.Context(), code, symbols)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch market data for " + code + ": " + err.Error()})
 			return

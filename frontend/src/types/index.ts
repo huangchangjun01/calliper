@@ -274,7 +274,7 @@ export interface PaginatedResponse<T> extends ApiResponse<PaginatedData<T>> {}
 
 export interface WsMessage<T = unknown> {
   channel: string;
-  type: 'subscribe' | 'unsubscribe' | 'data' | 'error' | 'heartbeat';
+  type: 'subscribe' | 'unsubscribe' | 'data' | 'quote' | 'error' | 'heartbeat';
   data: T;
   timestamp: number;
 }

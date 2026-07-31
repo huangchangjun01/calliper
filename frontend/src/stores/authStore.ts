@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { User, LoginRequest } from '@/types';
+import { setAuthToken } from '@/services/api';
 
 interface AuthState {
   user: User | null;
@@ -73,6 +74,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         // 忽略
       }
 
+      setAuthToken(token);
       set({ token, user, isAuthenticated: true, isLoading: false });
     } catch (err) {
       set({ isLoading: false });
@@ -87,6 +89,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     } catch {
       // 忽略
     }
+    setAuthToken(null);
     set({ token: null, user: null, isAuthenticated: false, isLoading: false });
   },
 
@@ -103,6 +106,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const token = get().token || getStoredToken();
     const user = get().user || getStoredUser();
     if (token && user) {
+      setAuthToken(token);
       set({ token, user, isAuthenticated: true });
       return true;
     }
