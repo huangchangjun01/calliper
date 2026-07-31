@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -20,6 +21,9 @@ type YahooCollector struct {
 	mu           sync.Mutex
 	lastRequest  time.Time
 	minInterval  time.Duration
+	cookie       string
+	crumb        string
+	cookieExpiry time.Time
 }
 
 // NewYahooCollector creates a new Yahoo Finance collector.
@@ -49,6 +53,107 @@ func (c *YahooCollector) rateLimit() {
 		time.Sleep(c.minInterval - elapsed)
 	}
 	c.lastRequest = time.Now()
+}
+
+// refreshAuth obtains a fresh cookie and crumb from Yahoo Finance.
+func (c *YahooCollector) refreshAuth() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	// Only refresh if expired (cookies valid for ~1 hour)
+	if c.cookie != "" && c.crumb != "" && time.Now().Before(c.cookieExpiry) {
+		return nil
+	}
+
+	// Step 1: Get cookie from Yahoo
+	req, _ := http.NewRequest("GET", "https://fc.yahoo.com/", nil)
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to get Yahoo cookie: %w", err)
+	}
+	resp.Body.Close()
+
+	// Extract cookies
+	var cookies []string
+	for _, cookie := range resp.Cookies() {
+		cookies = append(cookies, cookie.Name+"="+cookie.Value)
+	}
+	if len(cookies) == 0 {
+		return fmt.Errorf("no cookies received from Yahoo")
+	}
+	c.cookie = strings.Join(cookies, "; ")
+
+	// Step 2: Get crumb
+	crumbReq, _ := http.NewRequest("GET", "https://query2.finance.yahoo.com/v1/test/getcrumb", nil)
+	crumbReq.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+	crumbReq.Header.Set("Cookie", c.cookie)
+	crumbResp, err := c.httpClient.Do(crumbReq)
+	if err != nil {
+		c.cookie = ""
+		return fmt.Errorf("failed to get Yahoo crumb: %w", err)
+	}
+	defer crumbResp.Body.Close()
+
+	body, err := io.ReadAll(crumbResp.Body)
+	if err != nil {
+		c.cookie = ""
+		return fmt.Errorf("failed to read crumb response: %w", err)
+	}
+
+	c.crumb = strings.TrimSpace(string(body))
+	if c.crumb == "" {
+		c.cookie = ""
+		return fmt.Errorf("empty crumb received")
+	}
+
+	c.cookieExpiry = time.Now().Add(50 * time.Minute)
+	log.Printf("[Yahoo] Auth refreshed successfully, crumb=%s", c.crumb)
+	return nil
+}
+
+// doYahooRequest makes an authenticated request to Yahoo Finance API.
+func (c *YahooCollector) doYahooRequest(url string) ([]byte, error) {
+	// Refresh auth if needed
+	if err := c.refreshAuth(); err != nil {
+		return nil, err
+	}
+
+	// Add crumb to URL
+	sep := "?"
+	if strings.Contains(url, "?") {
+		sep = "&"
+	}
+	authURL := url + sep + "crumb=" + c.crumb
+
+	req, err := http.NewRequest("GET", authURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+	if c.cookie != "" {
+		req.Header.Set("Cookie", c.cookie)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	// Check if we got HTML (auth failed)
+	if len(body) > 0 && body[0] == '<' {
+		c.cookie = ""
+		c.crumb = ""
+		return nil, fmt.Errorf("received HTML response, auth may have expired")
+	}
+
+	return body, nil
 }
 
 // yahooChartResponse represents the Yahoo Finance v8 chart API response.
@@ -85,24 +190,10 @@ func (c *YahooCollector) FetchRealTimeData(symbols []string) ([]MarketData, erro
 	for _, symbol := range symbols {
 		c.rateLimit()
 
-		url := fmt.Sprintf("https://query1.finance.yahoo.com/v8/finance/chart/%s?interval=1m&range=1d", symbol)
-		req, err := http.NewRequest("GET", url, nil)
+		url := fmt.Sprintf("https://query2.finance.yahoo.com/v8/finance/chart/%s?interval=1m&range=1d", symbol)
+		body, err := c.doYahooRequest(url)
 		if err != nil {
 			log.Printf("[Yahoo] Request error for %s: %v", symbol, err)
-			continue
-		}
-		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-
-		resp, err := c.httpClient.Do(req)
-		if err != nil {
-			log.Printf("[Yahoo] HTTP error for %s: %v", symbol, err)
-			continue
-		}
-		defer resp.Body.Close()
-
-		body, err := io.ReadAll(resp.Body)
-		if err != nil {
-			log.Printf("[Yahoo] Read error for %s: %v", symbol, err)
 			continue
 		}
 
@@ -197,25 +288,13 @@ func (c *YahooCollector) FetchHistoricalData(symbol string, start, end time.Time
 	period2 := end.Unix()
 
 	url := fmt.Sprintf(
-		"https://query1.finance.yahoo.com/v8/finance/chart/%s?period1=%d&period2=%d&interval=%s",
+		"https://query2.finance.yahoo.com/v8/finance/chart/%s?period1=%d&period2=%d&interval=%s",
 		symbol, period1, period2, yahooInterval,
 	)
 
-	req, err := http.NewRequest("GET", url, nil)
+	body, err := c.doYahooRequest(url)
 	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
-	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("HTTP error: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("read body: %w", err)
+		return nil, fmt.Errorf("request failed: %w", err)
 	}
 
 	var chart yahooChartResponse

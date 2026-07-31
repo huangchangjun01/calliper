@@ -42,8 +42,9 @@ func NewMarketDataService(cfg MarketDataServiceConfig) *MarketDataService {
 	}
 
 	collectors := map[string]MarketDataCollector{
-		"CN": NewAKShareCollector(cfg.MLServiceURL),
-		"US": NewYahooCollector(cfg.MLServiceURL),
+		"CN": NewAKShareCollector(cfg.MLServiceURL, "CN"),
+		"US": NewAKShareCollector(cfg.MLServiceURL, "US"),
+		"HK": NewAKShareCollector(cfg.MLServiceURL, "HK"),
 	}
 
 	return &MarketDataService{
@@ -154,6 +155,8 @@ func (s *MarketDataService) getCollectionInterval(marketCode string) time.Durati
 	switch marketCode {
 	case "CN":
 		return 3 * time.Second // A-share snapshot every 3s
+	case "HK":
+		return 3 * time.Second // HK snapshot every 3s
 	case "US":
 		return 5 * time.Second // US snapshot every 5s
 	default:
@@ -177,6 +180,12 @@ func (s *MarketDataService) isTradingHours(marketCode string) bool {
 		h, m := now.Hour(), now.Minute()
 		morning := (h == 9 && m >= 30) || (h == 10) || (h == 11 && m <= 30)
 		afternoon := (h >= 13 && h < 15)
+		return morning || afternoon
+	case "HK":
+		// HK: 9:30-12:00, 13:00-16:00 HKT
+		h, m := now.Hour(), now.Minute()
+		morning := (h == 9 && m >= 30) || (h == 10 || h == 11) || (h == 12 && m == 0)
+		afternoon := (h >= 13 && h < 16)
 		return morning || afternoon
 	case "US":
 		// US: 9:30-16:00 EST (roughly 21:30-04:00 CST)
@@ -216,6 +225,11 @@ func (s *MarketDataService) getDefaultSymbols(marketCode string) []string {
 		return []string{
 			"AAPL", "GOOGL", "MSFT", "AMZN", "TSLA",
 			"META", "NVDA", "JPM", "V", "JNJ",
+		}
+	case "HK":
+		return []string{
+			"00700", "09988", "00941", "03690", "01299",
+			"00005", "00388", "02318", "01810", "00883",
 		}
 	default:
 		return nil

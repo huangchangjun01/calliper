@@ -13,18 +13,18 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// AKShareCollector implements MarketDataCollector for A-share (Chinese) stocks.
-// Uses Sina Finance API for real-time and historical data.
+// AKShareCollector implements MarketDataCollector using Sina Finance API.
+// Supports A-share (CN), US stocks, and HK stocks.
 type AKShareCollector struct {
 	marketCode   string
 	mlServiceURL string
 	httpClient   *http.Client
 }
 
-// NewAKShareCollector creates a new AKShare collector.
-func NewAKShareCollector(mlServiceURL string) *AKShareCollector {
+// NewAKShareCollector creates a new AKShare collector for the given market.
+func NewAKShareCollector(mlServiceURL string, marketCode string) *AKShareCollector {
 	return &AKShareCollector{
-		marketCode:   "CN",
+		marketCode:   marketCode,
 		mlServiceURL: mlServiceURL,
 		httpClient: &http.Client{
 			Timeout: 10 * time.Second,
@@ -38,17 +38,29 @@ func (c *AKShareCollector) GetMarketCode() string {
 }
 
 // sinaSymbol converts internal symbol format to Sina Finance format.
-// e.g., "600519" -> "sh600519", "000001" -> "sz000001"
+// CN: "600519" -> "sh600519", "000001" -> "sz000001"
+// US: "AAPL" -> "gb_aapl"
+// HK: "00700" -> "hk00700"
 func (c *AKShareCollector) sinaSymbol(symbol string) string {
-	if strings.HasPrefix(symbol, "6") {
-		return "sh" + symbol
+	switch c.marketCode {
+	case "CN":
+		upper := strings.ToUpper(symbol)
+		if strings.HasPrefix(upper, "6") || strings.HasPrefix(upper, "9") {
+			return "sh" + symbol
+		}
+		return "sz" + symbol
+	case "US":
+		return "gb_" + strings.ToLower(symbol)
+	case "HK":
+		return "hk" + symbol
+	default:
+		return symbol
 	}
-	return "sz" + symbol
 }
 
-// FetchRealTimeData fetches real-time A-share market data from Sina Finance API.
+// FetchRealTimeData fetches real-time market data from Sina Finance API.
 func (c *AKShareCollector) FetchRealTimeData(symbols []string) ([]MarketData, error) {
-	log.Printf("[AKShare] Fetching real-time data for %d symbols from Sina Finance", len(symbols))
+	log.Printf("[AKShare] Fetching real-time data for %d symbols from Sina Finance (market=%s)", len(symbols), c.marketCode)
 
 	var sinaCodes []string
 	for _, s := range symbols {
@@ -86,7 +98,7 @@ func (c *AKShareCollector) FetchRealTimeData(symbols []string) ([]MarketData, er
 			continue
 		}
 
-		// Parse Sina Finance format: var hq_str_sh600519="name,open,prev_close,price,high,low,..."
+		// Parse Sina Finance format: var hq_str_XXXX="data,fields,..."
 		idx := strings.Index(line, "\"")
 		if idx < 0 {
 			continue
@@ -103,7 +115,7 @@ func (c *AKShareCollector) FetchRealTimeData(symbols []string) ([]MarketData, er
 		}
 
 		parts := strings.Split(dataStr, ",")
-		if len(parts) < 9 {
+		if len(parts) < 4 {
 			continue
 		}
 
@@ -112,61 +124,138 @@ func (c *AKShareCollector) FetchRealTimeData(symbols []string) ([]MarketData, er
 			symbol = symbols[i]
 		}
 
-		price := decimal.NewFromFloat(parseFloatSafe(parts[3]))
-		open := decimal.NewFromFloat(parseFloatSafe(parts[1]))
-		prevClose := decimal.NewFromFloat(parseFloatSafe(parts[2]))
-		high := decimal.NewFromFloat(parseFloatSafe(parts[4]))
-		low := decimal.NewFromFloat(parseFloatSafe(parts[5]))
-		volume := parseInt64Safe(parts[8])
-		amount := parseFloatSafe(parts[9])
-
-		change := price.Sub(prevClose)
-		changePercent := float64(0)
-		if !prevClose.IsZero() {
-			changePercent, _ = change.Div(prevClose).Mul(decimal.NewFromInt(100)).Float64()
+		var md MarketData
+		switch c.marketCode {
+		case "CN":
+			md = c.parseCNData(parts, symbol, now)
+		case "US":
+			md = c.parseUSData(parts, symbol, now)
+		case "HK":
+			md = c.parseHKData(parts, symbol, now)
+		default:
+			continue
 		}
 
-		md := MarketData{
-			Symbol:        symbol,
-			Name:          parts[0],
-			Price:         price,
-			Open:          open,
-			High:          high,
-			Low:           low,
-			PreClose:      prevClose,
-			Volume:        volume,
-			Amount:        decimal.NewFromFloat(amount),
-			Change:        change,
-			ChangePercent: changePercent,
-			Timestamp:     now,
-			MarketCode:    c.marketCode,
-		}
-
-		// Parse bid/ask prices if available (indices depend on Sina format)
-		// Sina format varies by market, bid/ask are typically at positions 10-29
-		if len(parts) > 29 {
-			bidPrices := make([]decimal.Decimal, 5)
-			bidVolumes := make([]int64, 5)
-			askPrices := make([]decimal.Decimal, 5)
-			askVolumes := make([]int64, 5)
-
-			for j := 0; j < 5; j++ {
-				bidPrices[j] = decimal.NewFromFloat(parseFloatSafe(parts[11+j*2]))
-				bidVolumes[j] = parseInt64Safe(parts[10+j*2])
-				askPrices[j] = decimal.NewFromFloat(parseFloatSafe(parts[21+j*2]))
-				askVolumes[j] = parseInt64Safe(parts[20+j*2])
-			}
-			md.BidPrices = bidPrices
-			md.BidVolumes = bidVolumes
-			md.AskPrices = askPrices
-			md.AskVolumes = askVolumes
+		if md.Price.IsZero() {
+			continue
 		}
 
 		result = append(result, md)
 	}
 
-	log.Printf("[AKShare] Fetched %d real-time quotes from Sina Finance", len(result))
+	log.Printf("[AKShare] Fetched %d real-time quotes from Sina Finance (market=%s)", len(result), c.marketCode)
 	return result, nil
+}
+
+// parseCNData parses A-share market data from Sina response.
+// Format: name(0), open(1), prev_close(2), price(3), high(4), low(5), bid(6), ask(7), volume(8), amount(9), ...
+func (c *AKShareCollector) parseCNData(parts []string, symbol string, now time.Time) MarketData {
+	if len(parts) < 9 {
+		return MarketData{}
+	}
+
+	price := decimal.NewFromFloat(parseFloatSafe(parts[3]))
+	open := decimal.NewFromFloat(parseFloatSafe(parts[1]))
+	prevClose := decimal.NewFromFloat(parseFloatSafe(parts[2]))
+	high := decimal.NewFromFloat(parseFloatSafe(parts[4]))
+	low := decimal.NewFromFloat(parseFloatSafe(parts[5]))
+	volume := parseInt64Safe(parts[8])
+	amount := parseFloatSafe(parts[9])
+
+	change := price.Sub(prevClose)
+	changePercent := float64(0)
+	if !prevClose.IsZero() {
+		changePercent, _ = change.Div(prevClose).Mul(decimal.NewFromInt(100)).Float64()
+	}
+
+	md := MarketData{
+		Symbol:        symbol,
+		Name:          parts[0],
+		Price:         price,
+		Open:          open,
+		High:          high,
+		Low:           low,
+		PreClose:      prevClose,
+		Volume:        volume,
+		Amount:        decimal.NewFromFloat(amount),
+		Change:        change,
+		ChangePercent: changePercent,
+		Timestamp:     now,
+		MarketCode:    c.marketCode,
+	}
+
+	// Parse bid/ask if available
+	if len(parts) > 29 {
+		bidPrices := make([]decimal.Decimal, 5)
+		bidVolumes := make([]int64, 5)
+		askPrices := make([]decimal.Decimal, 5)
+		askVolumes := make([]int64, 5)
+
+		for j := 0; j < 5; j++ {
+			bidPrices[j] = decimal.NewFromFloat(parseFloatSafe(parts[11+j*2]))
+			bidVolumes[j] = parseInt64Safe(parts[10+j*2])
+			askPrices[j] = decimal.NewFromFloat(parseFloatSafe(parts[21+j*2]))
+			askVolumes[j] = parseInt64Safe(parts[20+j*2])
+		}
+		md.BidPrices = bidPrices
+		md.BidVolumes = bidVolumes
+		md.AskPrices = askPrices
+		md.AskVolumes = askVolumes
+	}
+
+	return md
+}
+
+// parseUSData parses US stock market data from Sina response.
+// Format: name(0), price(1), change_percent(2), change(3), ...
+func (c *AKShareCollector) parseUSData(parts []string, symbol string, now time.Time) MarketData {
+	name := parts[0]
+	price := decimal.NewFromFloat(parseFloatSafe(parts[1]))
+	changePercent := parseFloatSafe(parts[2])
+	change := decimal.NewFromFloat(parseFloatSafe(parts[3]))
+
+	md := MarketData{
+		Symbol:        symbol,
+		Name:          name,
+		Price:         price,
+		Change:        change,
+		ChangePercent: changePercent,
+		Timestamp:     now,
+		MarketCode:    c.marketCode,
+	}
+	return md
+}
+
+// parseHKData parses HK stock market data from Sina response.
+// Format: name(0), open(1), prev_close(2), price(3), high(4), low(5), ...
+func (c *AKShareCollector) parseHKData(parts []string, symbol string, now time.Time) MarketData {
+	if len(parts) < 10 {
+		return MarketData{}
+	}
+
+	name := parts[1]
+	price := decimal.NewFromFloat(parseFloatSafe(parts[4]))
+	open := decimal.NewFromFloat(parseFloatSafe(parts[2]))
+	prevClose := decimal.NewFromFloat(parseFloatSafe(parts[3]))
+	high := decimal.NewFromFloat(parseFloatSafe(parts[5]))
+	low := decimal.NewFromFloat(parseFloatSafe(parts[6]))
+	change := decimal.NewFromFloat(parseFloatSafe(parts[7]))
+	changePercent := parseFloatSafe(parts[8])
+
+	md := MarketData{
+		Symbol:        symbol,
+		Name:          name,
+		Price:         price,
+		Open:          open,
+		High:          high,
+		Low:           low,
+		PreClose:      prevClose,
+		Change:        change,
+		ChangePercent: changePercent,
+		Timestamp:     now,
+		MarketCode:    c.marketCode,
+	}
+	return md
 }
 
 // FetchHistoricalData fetches historical A-share K-line data from Sina Finance API.

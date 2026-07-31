@@ -121,6 +121,9 @@ func main() {
 		quotePushService.PushBatch(data)
 	})
 
+	// Start market data collection loop (periodic polling from Sina/Yahoo Finance)
+	marketService.StartCollection(bgCtx)
+
 	// Initialize watchlist service
 	var watchlistService *services.WatchlistService
 	if db != nil {
