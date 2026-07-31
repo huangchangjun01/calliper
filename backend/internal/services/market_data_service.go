@@ -42,8 +42,13 @@ func NewMarketDataService(cfg MarketDataServiceConfig) *MarketDataService {
 		kafkaProd = NewKafkaProducerNoop()
 	}
 
+	// CN market: East Money (primary) → Tencent Finance (fallback)
+	cnPrimary := NewEastMoneyCollector("CN")
+	cnFallback := NewTencentCollector("CN")
+	cnCollector := NewFallbackCollector(cnPrimary, cnFallback)
+
 	collectors := map[string]MarketDataCollector{
-		"CN": NewAKShareCollector(cfg.MLServiceURL, "CN"),
+		"CN": cnCollector,
 	}
 
 	return &MarketDataService{
