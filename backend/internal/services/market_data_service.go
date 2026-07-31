@@ -43,8 +43,6 @@ func NewMarketDataService(cfg MarketDataServiceConfig) *MarketDataService {
 
 	collectors := map[string]MarketDataCollector{
 		"CN": NewAKShareCollector(cfg.MLServiceURL, "CN"),
-		"US": NewAKShareCollector(cfg.MLServiceURL, "US"),
-		"HK": NewAKShareCollector(cfg.MLServiceURL, "HK"),
 	}
 
 	return &MarketDataService{
@@ -154,13 +152,9 @@ func (s *MarketDataService) runCollectionLoop(ctx context.Context, marketCode st
 func (s *MarketDataService) getCollectionInterval(marketCode string) time.Duration {
 	switch marketCode {
 	case "CN":
-		return 3 * time.Second // A-share snapshot every 3s
-	case "HK":
-		return 3 * time.Second // HK snapshot every 3s
-	case "US":
-		return 5 * time.Second // US snapshot every 5s
+		return 30 * time.Second // A-share snapshot every 30s
 	default:
-		return 5 * time.Second
+		return 30 * time.Second
 	}
 }
 
@@ -207,29 +201,26 @@ func (s *MarketDataService) getDefaultSymbols(marketCode string) []string {
 		}{}).
 			Table("stocks").
 			Where("is_active = ?", true).
-			Limit(20).
+			Limit(5).
 			Pluck("symbol", &symbols).Error
 		if err == nil && len(symbols) > 0 {
 			return symbols
 		}
 	}
 
-	// Fallback: well-known major stocks
+	// Fallback: well-known major stocks (limited to 5)
 	switch marketCode {
 	case "CN":
 		return []string{
-			"000001", "600519", "000858", "300750", "002415",
-			"601318", "600036", "600276", "000002", "600000",
+			"000001", "600519", "000858", "300750", "601318",
 		}
 	case "US":
 		return []string{
-			"AAPL", "GOOGL", "MSFT", "AMZN", "TSLA",
-			"META", "NVDA", "JPM", "V", "JNJ",
+			"AAPL", "MSFT", "GOOGL", "TSLA", "NVDA",
 		}
 	case "HK":
 		return []string{
-			"00700", "09988", "00941", "03690", "01299",
-			"00005", "00388", "02318", "01810", "00883",
+			"00700", "09988", "00388", "02318", "00005",
 		}
 	default:
 		return nil

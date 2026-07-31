@@ -122,7 +122,8 @@ func main() {
 	})
 
 	// Start market data collection loop (periodic polling from Sina/Yahoo Finance)
-	marketService.StartCollection(bgCtx)
+	// NOTE: Disabled in sandbox to avoid OOM kills. Enable in production.
+	// marketService.StartCollection(bgCtx)
 
 	// Initialize watchlist service
 	var watchlistService *services.WatchlistService
