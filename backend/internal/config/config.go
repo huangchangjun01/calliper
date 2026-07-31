@@ -60,7 +60,7 @@ func LoadConfig() *Config {
 		RedisPort:     getEnv("REDIS_PORT", "6379"),
 		RedisPassword: getEnv("REDIS_PASSWORD", ""),
 
-		KafkaBrokers: getEnv("KAFKA_BROKERS", "localhost:9092"),
+		KafkaBrokers: getEnv("KAFKA_BROKERS", ""),
 
 		JWTSecret:     getEnv("JWT_SECRET", "change-me-in-production"),
 		JWTExpiration: getEnvInt("JWT_EXPIRATION_HOURS", 24),

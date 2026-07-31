@@ -5,7 +5,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -58,7 +57,7 @@ func (c *TencentCollector) FetchRealTimeData(symbols []string) ([]MarketData, er
 		codes = append(codes, c.tencentSymbol(s))
 	}
 
-	url := "https://qt.gtimg.cn/q=" + strings.Join(codes, ",")
+	url := "http://qt.gtimg.cn/q=" + strings.Join(codes, ",")
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)

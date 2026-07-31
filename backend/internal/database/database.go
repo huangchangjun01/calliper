@@ -43,8 +43,8 @@ func DefaultConfig() Config {
 		DBName:          getEnv("DB_NAME", "quant_trading"),
 		TSDBName:        getEnv("TSDB_NAME", ""),
 		SSLMode:         getEnv("DB_SSLMODE", "disable"),
-		MaxOpenConns:    getEnvInt("DB_MAX_OPEN_CONNS", 25),
-		MaxIdleConns:    getEnvInt("DB_MAX_IDLE_CONNS", 10),
+		MaxOpenConns:    getEnvInt("DB_MAX_OPEN_CONNS", 5),
+		MaxIdleConns:    getEnvInt("DB_MAX_IDLE_CONNS", 2),
 		ConnMaxLifetime: time.Duration(getEnvInt("DB_CONN_MAX_LIFETIME_SEC", 300)) * time.Second,
 		ConnMaxIdleTime: time.Duration(getEnvInt("DB_CONN_MAX_IDLE_SEC", 60)) * time.Second,
 		LogLevel:        logger.Warn,
@@ -99,7 +99,6 @@ func Initialize(cfg Config) error {
 	tsGormDB, err := gorm.Open(postgres.Open(tsdsn), &gorm.Config{
 		Logger:                 logger.Default.LogMode(cfg.LogLevel),
 		SkipDefaultTransaction: true,
-		PrepareStmt:            true,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to connect to TimescaleDB: %w", err)

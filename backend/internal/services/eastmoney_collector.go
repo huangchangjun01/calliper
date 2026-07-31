@@ -7,7 +7,6 @@ import (
 	"log"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -78,6 +77,7 @@ type emStockData struct {
 
 // FetchRealTimeData fetches real-time market data from East Money API.
 // East Money returns JSON with UTF-8 encoding.
+// Uses sequential requests to avoid goroutine explosion and memory pressure.
 func (c *EastMoneyCollector) FetchRealTimeData(symbols []string) ([]MarketData, error) {
 	log.Printf("[EastMoney] Fetching real-time data for %d symbols (market=%s)", len(symbols), c.marketCode)
 
@@ -85,42 +85,25 @@ func (c *EastMoneyCollector) FetchRealTimeData(symbols []string) ([]MarketData, 
 		return nil, nil
 	}
 
-	// East Money get API supports a single secid at a time.
-	// Use concurrent requests for efficiency.
 	result := make([]MarketData, 0, len(symbols))
-	var mu sync.Mutex
-	var wg sync.WaitGroup
-	errCh := make(chan error, len(symbols))
+	failed := 0
 
 	for _, symbol := range symbols {
-		wg.Add(1)
-		go func(sym string) {
-			defer wg.Done()
-			md, err := c.fetchSingleStock(sym)
-			if err != nil {
-				errCh <- err
-				return
-			}
-			if md.Price == 0 {
-				return
-			}
-			mu.Lock()
-			result = append(result, md)
-			mu.Unlock()
-		}(symbol)
+		md, err := c.fetchSingleStock(symbol)
+		if err != nil {
+			log.Printf("[EastMoney] Request error for %s: %v", symbol, err)
+			failed++
+			continue
+		}
+		if md.Price == 0 {
+			continue
+		}
+		result = append(result, md)
 	}
 
-	wg.Wait()
-	close(errCh)
-
-	// Collect errors for logging but don't fail entirely
-	var errs []error
-	for err := range errCh {
-		errs = append(errs, err)
-	}
-	if len(errs) > 0 {
+	if failed > 0 {
 		log.Printf("[EastMoney] %d/%d requests failed, got %d results (market=%s)",
-			len(errs), len(symbols), len(result), c.marketCode)
+			failed, len(symbols), len(result), c.marketCode)
 	}
 
 	log.Printf("[EastMoney] Fetched %d real-time quotes (market=%s)", len(result), c.marketCode)

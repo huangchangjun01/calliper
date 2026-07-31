@@ -42,9 +42,11 @@ func NewMarketDataService(cfg MarketDataServiceConfig) *MarketDataService {
 		kafkaProd = NewKafkaProducerNoop()
 	}
 
-	// CN market: East Money (primary) → Tencent Finance (fallback)
-	cnPrimary := NewEastMoneyCollector("CN")
-	cnFallback := NewTencentCollector("CN")
+	// CN market: Tencent Finance as primary (East Money available as fallback
+	// when the environment has access to push2.eastmoney.com).
+	// In sandbox environments where East Money is blocked, Tencent is used directly.
+	cnPrimary := NewTencentCollector("CN")
+	cnFallback := NewEastMoneyCollector("CN")
 	cnCollector := NewFallbackCollector(cnPrimary, cnFallback)
 
 	collectors := map[string]MarketDataCollector{

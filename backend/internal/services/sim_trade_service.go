@@ -75,9 +75,9 @@ type PredictionInfo struct {
 
 // MakeDecision generates trading decisions based on real ML predictions.
 func (s *SimTradeService) MakeDecision(ctx context.Context) ([]SimTradeDecision, error) {
-	// 1. Get all active stocks
+	// 1. Get active stocks (limit to 20 to avoid memory pressure)
 	var stocks []models.Stock
-	if err := s.db.Where("is_active = ?", true).Preload("Market").Find(&stocks).Error; err != nil {
+	if err := s.db.Where("is_active = ?", true).Preload("Market").Limit(20).Find(&stocks).Error; err != nil {
 		return nil, fmt.Errorf("获取活跃股票失败: %w", err)
 	}
 
@@ -176,9 +176,22 @@ func (s *SimTradeService) getPredictions(ctx context.Context, stocks []models.St
 	// Try prediction service first
 	if s.predictionService != nil {
 		var predictions []PredictionInfo
+		consecutiveErrors := 0
+		const maxConsecutiveErrors = 5 // circuit breaker
+
 		for _, stock := range stocks {
 			pred, err := s.predictionService.GetPrediction(stock.Symbol)
-			if err == nil && pred != nil {
+			if err != nil {
+				consecutiveErrors++
+				if consecutiveErrors >= maxConsecutiveErrors {
+					log.Printf("[SimTrade] Prediction service failed %d times consecutively, stopping (circuit breaker)", consecutiveErrors)
+					break
+				}
+				continue
+			}
+			consecutiveErrors = 0 // reset on success
+
+			if pred != nil {
 				direction := "hold"
 				if pred.Direction == "up" || pred.Direction == "上涨" {
 					direction = "up"

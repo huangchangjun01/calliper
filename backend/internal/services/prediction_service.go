@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"time"
 )
 
 // PredictionService is an HTTP client for the Python ML prediction service.
@@ -18,10 +17,8 @@ type PredictionService struct {
 // NewPredictionService creates a new PredictionService.
 func NewPredictionService(baseURL string) *PredictionService {
 	return &PredictionService{
-		baseURL: strings.TrimRight(baseURL, "/"),
-		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
-		},
+		baseURL:    strings.TrimRight(baseURL, "/"),
+		httpClient: newPooledHTTPClient(),
 	}
 }
 
@@ -89,6 +86,14 @@ type BatchRequest struct {
 // API methods
 // ──────────────────────────────────────────────────────────────
 
+// readLimitedBody reads up to maxBytes from the response body for error logging.
+// This prevents reading large HTML error pages into memory.
+func readLimitedBody(r io.Reader, maxBytes int64) string {
+	limited := io.LimitReader(r, maxBytes)
+	b, _ := io.ReadAll(limited)
+	return string(b)
+}
+
 // GetPrediction fetches a single stock prediction from the ML service.
 func (s *PredictionService) GetPrediction(symbol string) (*PredictionResult, error) {
 	url := fmt.Sprintf("%s/api/v1/predictions/%s", s.baseURL, symbol)
@@ -100,8 +105,7 @@ func (s *PredictionService) GetPrediction(symbol string) (*PredictionResult, err
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("prediction service returned %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("prediction service returned %d: %s", resp.StatusCode, readLimitedBody(resp.Body, 1024))
 	}
 
 	var result PredictionResult
@@ -128,8 +132,7 @@ func (s *PredictionService) GetBatchPredictions(symbols []string) ([]PredictionR
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("batch prediction service returned %d: %s", resp.StatusCode, string(respBody))
+		return nil, fmt.Errorf("batch prediction service returned %d: %s", resp.StatusCode, readLimitedBody(resp.Body, 1024))
 	}
 
 	var results []PredictionResult
@@ -152,8 +155,7 @@ func (s *PredictionService) GetPredictionHistory(symbol string, period string, l
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("prediction history service returned %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("prediction history service returned %d: %s", resp.StatusCode, readLimitedBody(resp.Body, 1024))
 	}
 
 	var history []Prediction
@@ -175,8 +177,7 @@ func (s *PredictionService) TriggerPrediction() error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("trigger prediction returned %d: %s", resp.StatusCode, string(body))
+		return fmt.Errorf("trigger prediction returned %d: %s", resp.StatusCode, readLimitedBody(resp.Body, 1024))
 	}
 
 	return nil
@@ -193,8 +194,7 @@ func (s *PredictionService) GetPredictionAccuracy(symbol string) (*AccuracyRepor
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("accuracy service returned %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("accuracy service returned %d: %s", resp.StatusCode, readLimitedBody(resp.Body, 1024))
 	}
 
 	var report AccuracyReport
@@ -216,8 +216,7 @@ func (s *PredictionService) GetModelStatus() ([]ModelStatus, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("model status service returned %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("model status service returned %d: %s", resp.StatusCode, readLimitedBody(resp.Body, 1024))
 	}
 
 	var statuses []ModelStatus
