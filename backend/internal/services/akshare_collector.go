@@ -1,6 +1,7 @@
 package services
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,8 +10,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/shopspring/decimal"
 )
 
 // AKShareCollector implements MarketDataCollector using Sina Finance API.
@@ -26,9 +25,7 @@ func NewAKShareCollector(mlServiceURL string, marketCode string) *AKShareCollect
 	return &AKShareCollector{
 		marketCode:   marketCode,
 		mlServiceURL: mlServiceURL,
-		httpClient: &http.Client{
-			Timeout: 10 * time.Second,
-		},
+		httpClient:   newPooledHTTPClient(),
 	}
 }
 
@@ -59,6 +56,8 @@ func (c *AKShareCollector) sinaSymbol(symbol string) string {
 }
 
 // FetchRealTimeData fetches real-time market data from Sina Finance API.
+// Uses bufio.Scanner for streaming line-by-line parsing to avoid
+// double-buffering the entire response body in memory.
 func (c *AKShareCollector) FetchRealTimeData(symbols []string) ([]MarketData, error) {
 	log.Printf("[AKShare] Fetching real-time data for %d symbols from Sina Finance (market=%s)", len(symbols), c.marketCode)
 
@@ -81,35 +80,47 @@ func (c *AKShareCollector) FetchRealTimeData(symbols []string) ([]MarketData, er
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("read body: %w", err)
-	}
-
-	text := string(body)
-	lines := strings.Split(text, "\n")
-
-	var result []MarketData
+	// Pre-allocate result slice to avoid dynamic growth reallocations
+	result := make([]MarketData, 0, len(symbols))
 	now := time.Now()
 
-	for i, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" {
+	// Use bufio.Scanner for line-by-line streaming, avoiding io.ReadAll + string() copy
+	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 64*1024), 64*1024) // 64KB buffer, enough for ~30 stocks
+	i := 0
+
+	for scanner.Scan() {
+		line := scanner.Bytes()
+		if len(line) == 0 {
 			continue
 		}
 
 		// Parse Sina Finance format: var hq_str_XXXX="data,fields,..."
-		idx := strings.Index(line, "\"")
-		if idx < 0 {
+		// Find opening quote using byte search to avoid string conversion
+		idx := -1
+		for j, b := range line {
+			if b == '"' {
+				idx = j
+				break
+			}
+		}
+		if idx < 0 || idx+1 >= len(line) {
 			continue
 		}
-		dataStr := line[idx+1:]
-		endIdx := strings.LastIndex(dataStr, "\"")
-		if endIdx < 0 {
-			continue
-		}
-		dataStr = dataStr[:endIdx]
 
+		// Find closing quote
+		endIdx := -1
+		for j := len(line) - 1; j > idx; j-- {
+			if line[j] == '"' {
+				endIdx = j
+				break
+			}
+		}
+		if endIdx < 0 || endIdx <= idx {
+			continue
+		}
+
+		dataStr := string(line[idx+1 : endIdx])
 		if dataStr == "" {
 			continue
 		}
@@ -133,14 +144,21 @@ func (c *AKShareCollector) FetchRealTimeData(symbols []string) ([]MarketData, er
 		case "HK":
 			md = c.parseHKData(parts, symbol, now)
 		default:
+			i++
 			continue
 		}
 
-		if md.Price.IsZero() {
+		if md.Price == 0 {
+			i++
 			continue
 		}
 
 		result = append(result, md)
+		i++
+	}
+
+	if err := scanner.Err(); err != nil {
+		log.Printf("[AKShare] Scanner error: %v", err)
 	}
 
 	log.Printf("[AKShare] Fetched %d real-time quotes from Sina Finance (market=%s)", len(result), c.marketCode)
@@ -154,21 +172,21 @@ func (c *AKShareCollector) parseCNData(parts []string, symbol string, now time.T
 		return MarketData{}
 	}
 
-	price := decimal.NewFromFloat(parseFloatSafe(parts[3]))
-	open := decimal.NewFromFloat(parseFloatSafe(parts[1]))
-	prevClose := decimal.NewFromFloat(parseFloatSafe(parts[2]))
-	high := decimal.NewFromFloat(parseFloatSafe(parts[4]))
-	low := decimal.NewFromFloat(parseFloatSafe(parts[5]))
+	price := parseFloatSafe(parts[3])
+	open := parseFloatSafe(parts[1])
+	prevClose := parseFloatSafe(parts[2])
+	high := parseFloatSafe(parts[4])
+	low := parseFloatSafe(parts[5])
 	volume := parseInt64Safe(parts[8])
 	amount := parseFloatSafe(parts[9])
 
-	change := price.Sub(prevClose)
+	change := price - prevClose
 	changePercent := float64(0)
-	if !prevClose.IsZero() {
-		changePercent, _ = change.Div(prevClose).Mul(decimal.NewFromInt(100)).Float64()
+	if prevClose != 0 {
+		changePercent = change / prevClose * 100
 	}
 
-	md := MarketData{
+	return MarketData{
 		Symbol:        symbol,
 		Name:          parts[0],
 		Price:         price,
@@ -177,44 +195,23 @@ func (c *AKShareCollector) parseCNData(parts []string, symbol string, now time.T
 		Low:           low,
 		PreClose:      prevClose,
 		Volume:        volume,
-		Amount:        decimal.NewFromFloat(amount),
+		Amount:        amount,
 		Change:        change,
 		ChangePercent: changePercent,
 		Timestamp:     now,
 		MarketCode:    c.marketCode,
 	}
-
-	// Parse bid/ask if available
-	if len(parts) > 29 {
-		bidPrices := make([]decimal.Decimal, 5)
-		bidVolumes := make([]int64, 5)
-		askPrices := make([]decimal.Decimal, 5)
-		askVolumes := make([]int64, 5)
-
-		for j := 0; j < 5; j++ {
-			bidPrices[j] = decimal.NewFromFloat(parseFloatSafe(parts[11+j*2]))
-			bidVolumes[j] = parseInt64Safe(parts[10+j*2])
-			askPrices[j] = decimal.NewFromFloat(parseFloatSafe(parts[21+j*2]))
-			askVolumes[j] = parseInt64Safe(parts[20+j*2])
-		}
-		md.BidPrices = bidPrices
-		md.BidVolumes = bidVolumes
-		md.AskPrices = askPrices
-		md.AskVolumes = askVolumes
-	}
-
-	return md
 }
 
 // parseUSData parses US stock market data from Sina response.
 // Format: name(0), price(1), change_percent(2), change(3), ...
 func (c *AKShareCollector) parseUSData(parts []string, symbol string, now time.Time) MarketData {
 	name := parts[0]
-	price := decimal.NewFromFloat(parseFloatSafe(parts[1]))
+	price := parseFloatSafe(parts[1])
 	changePercent := parseFloatSafe(parts[2])
-	change := decimal.NewFromFloat(parseFloatSafe(parts[3]))
+	change := parseFloatSafe(parts[3])
 
-	md := MarketData{
+	return MarketData{
 		Symbol:        symbol,
 		Name:          name,
 		Price:         price,
@@ -223,7 +220,6 @@ func (c *AKShareCollector) parseUSData(parts []string, symbol string, now time.T
 		Timestamp:     now,
 		MarketCode:    c.marketCode,
 	}
-	return md
 }
 
 // parseHKData parses HK stock market data from Sina response.
@@ -234,15 +230,15 @@ func (c *AKShareCollector) parseHKData(parts []string, symbol string, now time.T
 	}
 
 	name := parts[1]
-	price := decimal.NewFromFloat(parseFloatSafe(parts[4]))
-	open := decimal.NewFromFloat(parseFloatSafe(parts[2]))
-	prevClose := decimal.NewFromFloat(parseFloatSafe(parts[3]))
-	high := decimal.NewFromFloat(parseFloatSafe(parts[5]))
-	low := decimal.NewFromFloat(parseFloatSafe(parts[6]))
-	change := decimal.NewFromFloat(parseFloatSafe(parts[7]))
+	price := parseFloatSafe(parts[4])
+	open := parseFloatSafe(parts[2])
+	prevClose := parseFloatSafe(parts[3])
+	high := parseFloatSafe(parts[5])
+	low := parseFloatSafe(parts[6])
+	change := parseFloatSafe(parts[7])
 	changePercent := parseFloatSafe(parts[8])
 
-	md := MarketData{
+	return MarketData{
 		Symbol:        symbol,
 		Name:          name,
 		Price:         price,
@@ -255,7 +251,6 @@ func (c *AKShareCollector) parseHKData(parts []string, symbol string, now time.T
 		Timestamp:     now,
 		MarketCode:    c.marketCode,
 	}
-	return md
 }
 
 // FetchHistoricalData fetches historical A-share K-line data from Sina Finance API.
@@ -320,7 +315,7 @@ func (c *AKShareCollector) FetchHistoricalData(symbol string, start, end time.Ti
 
 	var items []KLineItem
 	if err := json.Unmarshal(body, &items); err != nil {
-		log.Printf("[AKShare] JSON parse error: %v, body: %s", err, string(body[:min(len(body), 200)]))
+		log.Printf("[AKShare] JSON parse error: %v, body: %s", err, string(body[:minInt(len(body), 200)]))
 		return nil, fmt.Errorf("parse JSON: %w", err)
 	}
 
@@ -340,10 +335,10 @@ func (c *AKShareCollector) FetchHistoricalData(symbol string, start, end time.Ti
 			continue
 		}
 
-		open := decimal.NewFromFloat(parseFloatSafe(item.Open))
-		high := decimal.NewFromFloat(parseFloatSafe(item.High))
-		low := decimal.NewFromFloat(parseFloatSafe(item.Low))
-		close := decimal.NewFromFloat(parseFloatSafe(item.Close))
+		open := parseFloatSafe(item.Open)
+		high := parseFloatSafe(item.High)
+		low := parseFloatSafe(item.Low)
+		close := parseFloatSafe(item.Close)
 		volume := parseInt64Safe(item.Volume)
 
 		md := MarketData{
@@ -364,9 +359,9 @@ func (c *AKShareCollector) FetchHistoricalData(symbol string, start, end time.Ti
 			md.PreClose = open
 		}
 
-		if !md.PreClose.IsZero() {
-			md.Change = md.Price.Sub(md.PreClose)
-			md.ChangePercent, _ = md.Change.Div(md.PreClose).Mul(decimal.NewFromInt(100)).Float64()
+		if md.PreClose != 0 {
+			md.Change = md.Price - md.PreClose
+			md.ChangePercent = md.Change / md.PreClose * 100
 		}
 
 		result = append(result, md)
@@ -376,7 +371,7 @@ func (c *AKShareCollector) FetchHistoricalData(symbol string, start, end time.Ti
 	return result, nil
 }
 
-func min(a, b int) int {
+func minInt(a, b int) int {
 	if a < b {
 		return a
 	}

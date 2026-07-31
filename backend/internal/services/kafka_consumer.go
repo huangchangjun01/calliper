@@ -176,11 +176,11 @@ func (kc *KafkaConsumer) writeMarketBatch(ctx context.Context, batch []MarketDat
 	var dailyRecords []models.StockPriceDaily
 
 	for _, md := range batch {
-		price, _ := md.Price.Float64()
-		open, _ := md.Open.Float64()
-		high, _ := md.High.Float64()
-		low, _ := md.Low.Float64()
-		amount, _ := md.Amount.Float64()
+		price := md.Price
+		open := md.Open
+		high := md.High
+		low := md.Low
+		amount := md.Amount
 
 		// Minute data
 		minuteRecords = append(minuteRecords, models.StockPriceMinute{
@@ -195,8 +195,8 @@ func (kc *KafkaConsumer) writeMarketBatch(ctx context.Context, batch []MarketDat
 		})
 
 		// Daily data (end-of-day aggregate)
-		totalMarketCap, _ := md.TotalMarketCap.Float64()
-		floatMarketCap, _ := md.FloatMarketCap.Float64()
+		totalMarketCap := md.TotalMarketCap
+		floatMarketCap := md.FloatMarketCap
 
 		dailyRecords = append(dailyRecords, models.StockPriceDaily{
 			Time:           md.Timestamp,
@@ -259,7 +259,7 @@ func (kc *KafkaConsumer) writeTickBatch(ctx context.Context, batch []MarketData)
 	var tickRecords []models.StockPriceTick
 
 	for _, md := range batch {
-		price, _ := md.Price.Float64()
+		price := md.Price
 
 		tickRecords = append(tickRecords, models.StockPriceTick{
 			Time:    md.Timestamp,

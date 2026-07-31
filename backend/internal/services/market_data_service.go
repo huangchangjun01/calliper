@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"log"
+	"strconv"
 	"sync"
 	"time"
 
@@ -236,7 +237,7 @@ func (s *MarketDataService) cacheMarketData(ctx context.Context, marketCode stri
 	for _, md := range data {
 		key := "market:realtime:" + md.Symbol
 		// Use Redis to cache the latest snapshot with a TTL
-		_ = s.redis.Set(ctx, key, md.Price.String(), 30*time.Second).Err()
+		_ = s.redis.Set(ctx, key, strconv.FormatFloat(md.Price, 'f', 2, 64), 30*time.Second).Err()
 	}
 }
 

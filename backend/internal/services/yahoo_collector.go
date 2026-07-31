@@ -9,8 +9,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/shopspring/decimal"
 )
 
 // YahooCollector implements MarketDataCollector for overseas stocks via Yahoo Finance.
@@ -31,10 +29,8 @@ func NewYahooCollector(mlServiceURL string) *YahooCollector {
 	return &YahooCollector{
 		marketCode:   "US",
 		mlServiceURL: mlServiceURL,
-		httpClient: &http.Client{
-			Timeout: 10 * time.Second,
-		},
-		minInterval: 200 * time.Millisecond,
+		httpClient:   newPooledHTTPClient(),
+		minInterval:  200 * time.Millisecond,
 	}
 }
 
@@ -184,7 +180,7 @@ type yahooChartResponse struct {
 func (c *YahooCollector) FetchRealTimeData(symbols []string) ([]MarketData, error) {
 	log.Printf("[Yahoo] Fetching real-time data for %d symbols from Yahoo Finance", len(symbols))
 
-	var result []MarketData
+	result := make([]MarketData, 0, len(symbols))
 	now := time.Now()
 
 	for _, symbol := range symbols {
@@ -211,17 +207,16 @@ func (c *YahooCollector) FetchRealTimeData(symbols []string) ([]MarketData, erro
 		r := chart.Chart.Result[0]
 		meta := r.Meta
 
-		price := decimal.NewFromFloat(meta.RegularMarketPrice)
-		prevClose := decimal.NewFromFloat(meta.PreviousClose)
-
-		change := price.Sub(prevClose)
+		price := meta.RegularMarketPrice
+		prevClose := meta.PreviousClose
+		change := price - prevClose
 		changePercent := float64(0)
-		if !prevClose.IsZero() {
-			changePercent, _ = change.Div(prevClose).Mul(decimal.NewFromInt(100)).Float64()
+		if prevClose != 0 {
+			changePercent = change / prevClose * 100
 		}
 
 		// Get latest quote data
-		var open, high, low decimal.Decimal
+		var open, high, low float64
 		var volume int64
 		var amount float64
 
@@ -229,9 +224,9 @@ func (c *YahooCollector) FetchRealTimeData(symbols []string) ([]MarketData, erro
 			q := r.Indicators.Quote[0]
 			n := len(q.Close)
 			if n > 0 {
-				open = decimal.NewFromFloat(q.Open[n-1])
-				high = decimal.NewFromFloat(q.High[n-1])
-				low = decimal.NewFromFloat(q.Low[n-1])
+				open = q.Open[n-1]
+				high = q.High[n-1]
+				low = q.Low[n-1]
 				volume = q.Volume[n-1]
 				amount = q.Close[n-1] * float64(q.Volume[n-1])
 			}
@@ -246,7 +241,7 @@ func (c *YahooCollector) FetchRealTimeData(symbols []string) ([]MarketData, erro
 			Low:           low,
 			PreClose:      prevClose,
 			Volume:        volume,
-			Amount:        decimal.NewFromFloat(amount),
+			Amount:        amount,
 			Change:        change,
 			ChangePercent: changePercent,
 			Timestamp:     now,
@@ -320,12 +315,12 @@ func (c *YahooCollector) FetchHistoricalData(symbol string, start, end time.Time
 	for i := 0; i < n && i < len(q.Close); i++ {
 		t := time.Unix(timestamps[i], 0)
 
-		open := decimal.NewFromFloat(q.Open[i])
-		high := decimal.NewFromFloat(q.High[i])
-		low := decimal.NewFromFloat(q.Low[i])
-		close := decimal.NewFromFloat(q.Close[i])
+		open := q.Open[i]
+		high := q.High[i]
+		low := q.Low[i]
+		close := q.Close[i]
 		volume := q.Volume[i]
-		amount := q.Close[i] * float64(volume)
+		amount := close * float64(volume)
 
 		md := MarketData{
 			Symbol:     symbol,
@@ -334,7 +329,7 @@ func (c *YahooCollector) FetchHistoricalData(symbol string, start, end time.Time
 			High:       high,
 			Low:        low,
 			Volume:     volume,
-			Amount:     decimal.NewFromFloat(amount),
+			Amount:     amount,
 			Timestamp:  t,
 			MarketCode: c.marketCode,
 		}
@@ -346,9 +341,9 @@ func (c *YahooCollector) FetchHistoricalData(symbol string, start, end time.Time
 			md.PreClose = open
 		}
 
-		if !md.PreClose.IsZero() {
-			md.Change = md.Price.Sub(md.PreClose)
-			md.ChangePercent, _ = md.Change.Div(md.PreClose).Mul(decimal.NewFromInt(100)).Float64()
+		if md.PreClose != 0 {
+			md.Change = md.Price - md.PreClose
+			md.ChangePercent = md.Change / md.PreClose * 100
 		}
 
 		result = append(result, md)

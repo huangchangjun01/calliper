@@ -236,7 +236,7 @@ func (s *SimTradeService) getRealTimePrices(ctx context.Context, picks []Predict
 			data, err := collector.FetchRealTimeData(symbols)
 			if err == nil {
 				for _, md := range data {
-					f, _ := md.Price.Float64()
+					f := md.Price
 					if f > 0 {
 						priceMap[md.Symbol] = f
 					}
@@ -835,7 +835,7 @@ func (s *SimTradeService) getCurrentPrice(ctx context.Context, symbol string) fl
 		for _, collector := range collectors {
 			data, err := collector.FetchRealTimeData([]string{symbol})
 			if err == nil && len(data) > 0 {
-				f, _ := data[0].Price.Float64()
+				f := data[0].Price
 				if f > 0 {
 					return f
 				}

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"strings"
 	"syscall"
 	"time"
@@ -26,6 +27,22 @@ import (
 func main() {
 	// Load configuration
 	cfg := config.LoadConfig()
+
+	// GC tuning: Set soft memory limit to 256 MiB and increase GC aggressiveness.
+	// GOGC=50 means GC triggers when heap grows by 50% (default is 100%).
+	// Together with GOMEMLIMIT, this keeps memory stable by triggering GC more
+	// frequently and preventing the heap from growing beyond the limit.
+	//
+	// Priority: GOMEMLIMIT env var > SetMemoryLimit call, but we set both for
+	// environments where the env var may not be set.
+	if os.Getenv("GOMEMLIMIT") == "" {
+		debug.SetMemoryLimit(256 * 1024 * 1024) // 256 MiB
+	}
+	if os.Getenv("GOGC") == "" {
+		debug.SetGCPercent(50) // GC when heap grows by 50% (default: 100%)
+	}
+	log.Printf("[GC] Memory limit: %d MiB, GOGC: %d",
+		debug.SetMemoryLimit(-1)/(1024*1024), debug.SetGCPercent(-1))
 
 	// Initialize Redis client
 	redisAddr := fmt.Sprintf("%s:%s", cfg.RedisHost, cfg.RedisPort)
@@ -122,8 +139,7 @@ func main() {
 	})
 
 	// Start market data collection loop (periodic polling from Sina/Yahoo Finance)
-	// NOTE: Disabled in sandbox to avoid OOM kills. Enable in production.
-	// marketService.StartCollection(bgCtx)
+	marketService.StartCollection(bgCtx)
 
 	// Initialize watchlist service
 	var watchlistService *services.WatchlistService

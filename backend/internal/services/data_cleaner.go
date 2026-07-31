@@ -4,8 +4,6 @@ import (
 	"log"
 	"math"
 	"time"
-
-	"github.com/shopspring/decimal"
 )
 
 // DataCleaner provides a pipeline for cleaning and validating market data.
@@ -37,10 +35,10 @@ func (dc *DataCleaner) CleanMarketData(data []MarketData) []MarketData {
 
 // Deduplicate removes duplicate entries by symbol+timestamp, keeping the latest.
 func (dc *DataCleaner) Deduplicate(data []MarketData) []MarketData {
-	seen := make(map[string]int)
-	var result []MarketData
+	seen := make(map[string]int, len(data))
+	result := make([]MarketData, 0, len(data))
 
-	for i, md := range data {
+	for _, md := range data {
 		key := md.Symbol + "_" + md.Timestamp.Format(time.RFC3339Nano)
 		if prevIdx, exists := seen[key]; exists {
 			// Replace previous entry with the newer one
@@ -49,7 +47,6 @@ func (dc *DataCleaner) Deduplicate(data []MarketData) []MarketData {
 			seen[key] = len(result)
 			result = append(result, md)
 		}
-		_ = i
 	}
 
 	if len(result) < len(data) {
@@ -68,31 +65,31 @@ func (dc *DataCleaner) FillMissing(data []MarketData) []MarketData {
 		symbol := data[i].Symbol
 		prev, exists := lastValid[symbol]
 
-		if data[i].Price.IsZero() && exists {
+		if data[i].Price == 0 && exists && prev.Price != 0 {
 			data[i].Price = prev.Price
 			filledCount++
 		}
-		if data[i].Open.IsZero() && exists {
+		if data[i].Open == 0 && exists && prev.Open != 0 {
 			data[i].Open = prev.Open
 			filledCount++
 		}
-		if data[i].High.IsZero() && exists {
+		if data[i].High == 0 && exists && prev.High != 0 {
 			data[i].High = prev.High
 			filledCount++
 		}
-		if data[i].Low.IsZero() && exists {
+		if data[i].Low == 0 && exists && prev.Low != 0 {
 			data[i].Low = prev.Low
 			filledCount++
 		}
-		if data[i].PreClose.IsZero() && exists {
+		if data[i].PreClose == 0 && exists && prev.PreClose != 0 {
 			data[i].PreClose = prev.PreClose
 			filledCount++
 		}
-		if data[i].Volume == 0 && exists {
+		if data[i].Volume == 0 && exists && prev.Volume != 0 {
 			data[i].Volume = prev.Volume
 			filledCount++
 		}
-		if data[i].Amount.IsZero() && exists {
+		if data[i].Amount == 0 && exists && prev.Amount != 0 {
 			data[i].Amount = prev.Amount
 			filledCount++
 		}
@@ -114,19 +111,16 @@ func (dc *DataCleaner) DetectAnomalies(data []MarketData) []MarketData {
 
 	for i := range data {
 		md := &data[i]
-		if md.PreClose.IsZero() {
+		if md.PreClose == 0 {
 			continue
 		}
 
-		changePercent, _ := md.Price.Sub(md.PreClose).
-			Div(md.PreClose).
-			Mul(decimal.NewFromInt(100)).
-			Float64()
+		changePercent := (md.Price - md.PreClose) / md.PreClose * 100
 
 		if math.Abs(changePercent) > dc.MaxPriceChangePercent {
 			anomalyCount++
 			log.Printf("[DataCleaner] ANOMALY detected: symbol=%s price=%.2f preClose=%.2f change=%.2f%%",
-				md.Symbol, md.Price.InexactFloat64(), md.PreClose.InexactFloat64(), changePercent)
+				md.Symbol, md.Price, md.PreClose, changePercent)
 		}
 	}
 
