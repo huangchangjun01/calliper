@@ -12,6 +12,7 @@ import '@/pages/Dashboard.css';
 interface WatchlistItem {
   symbol: string;
   name: string;
+  stock?: { name?: string };
 }
 
 interface MarketStatistics {
@@ -38,9 +39,13 @@ export default function Dashboard() {
   useEffect(() => {
     api.get<WatchlistItem[]>('/stocks/watchlist')
       .then((data) => {
-        setWatchlist(data);
-        if (data.length > 0 && !selectedSymbol) {
-          setSelectedSymbol(data[0].symbol);
+        const items = data.map((item) => ({
+          symbol: item.symbol,
+          name: item.stock?.name || item.symbol,
+        }));
+        setWatchlist(items);
+        if (items.length > 0 && !selectedSymbol) {
+          setSelectedSymbol(items[0].symbol);
         }
       })
       .catch(() => {

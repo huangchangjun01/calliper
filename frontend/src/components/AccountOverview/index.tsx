@@ -37,6 +37,16 @@ export default function AccountOverview({ account, loading }: AccountOverviewPro
   const todayProfit = formatProfit(account.todayProfit);
   const totalProfit = formatProfit(account.totalProfit);
 
+  const todayProfitPercent = account.todayProfitPercent;
+  const todayProfitPercentSub = todayProfitPercent != null
+    ? `${todayProfitPercent > 0 ? '+' : ''}${todayProfitPercent.toFixed(2)}%`
+    : '--';
+
+  const totalProfitPercent = account.totalProfitPercent;
+  const totalProfitPercentSub = totalProfitPercent != null
+    ? `${totalProfitPercent > 0 ? '+' : ''}${totalProfitPercent.toFixed(2)}%`
+    : '--';
+
   const cards = [
     {
       label: '总资产',
@@ -57,13 +67,13 @@ export default function AccountOverview({ account, loading }: AccountOverviewPro
       label: '今日盈亏',
       value: `¥ ${todayProfit.text}`,
       className: todayProfit.className,
-      sub: `${account.todayProfitPercent > 0 ? '+' : ''}${account.todayProfitPercent.toFixed(2)}%`,
+      sub: todayProfitPercentSub,
     },
     {
       label: '总盈亏',
       value: `¥ ${totalProfit.text}`,
       className: totalProfit.className,
-      sub: `${account.totalProfitPercent > 0 ? '+' : ''}${account.totalProfitPercent.toFixed(2)}%`,
+      sub: totalProfitPercentSub,
     },
     {
       label: '风险等级',

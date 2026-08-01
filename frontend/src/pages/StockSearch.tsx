@@ -1,8 +1,9 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Pagination } from 'antd';
 import type { StockSearchItem, PaginatedData } from '@/types';
 import api from '@/services/api';
+import useStockQuote from '@/hooks/useStockQuote';
 import MarketTabs from '@/components/MarketTabs';
 import SearchBox from '@/components/SearchBox';
 import StockTable from '@/components/StockTable';
@@ -24,14 +25,15 @@ async function fetchStocks(params: {
   });
 
   // Map backend snake_case to frontend camelCase
+  // 注意：price / changePercent 不在 /stocks/search 返回中，由 useStockQuote 提供
   const items: StockSearchItem[] = (data.stocks ?? []).map((s: Record<string, unknown>) => ({
     symbol: (s.symbol as string) ?? '',
     name: (s.name as string) ?? '',
     exchange: (s.exchange as string) ?? '',
     industry: (s.industry as string) ?? '',
     marketCap: (s.market_cap as number) ?? 0,
-    price: (s.price as number) ?? 0,
-    changePercent: (s.changePercent as number) ?? 0,
+    price: 0,
+    changePercent: 0,
   }));
 
   return {
@@ -59,8 +61,24 @@ export default function StockSearch() {
     placeholderData: (prev) => prev,
   });
 
-  const stocks = data?.items ?? [];
+  const baseStocks = data?.items ?? [];
   const total = data?.total ?? 0;
+
+  // 将股票列表的 symbols 传给 useStockQuote，获取实时行情（最新价、涨跌幅等）
+  const symbols = useMemo(() => baseStocks.map((s) => s.symbol), [baseStocks]);
+  const { stocks: quoteMap } = useStockQuote(symbols);
+
+  // 合并实时行情数据：price / changePercent 取自 useStockQuote 返回的 stocks Map
+  const stocks = useMemo(() => {
+    return baseStocks.map((s) => {
+      const quote = quoteMap.get(s.symbol);
+      return {
+        ...s,
+        price: quote?.price ?? 0,
+        changePercent: quote?.changePercent ?? 0,
+      };
+    });
+  }, [baseStocks, quoteMap]);
 
   const handleMarketChange = useCallback((newMarket: string) => {
     setMarket(newMarket);

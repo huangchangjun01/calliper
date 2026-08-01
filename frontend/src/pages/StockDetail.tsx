@@ -18,13 +18,24 @@ interface DepthData {
   asks: DepthLevel[];
 }
 
+interface RawDepthData {
+  symbol: string;
+  bid_prices: number[];
+  bid_volumes: number[];
+  ask_prices: number[];
+  ask_volumes: number[];
+  timestamp: number;
+}
+
 interface Fundamentals {
-  marketCap: number;
-  pe: number;
-  pb: number;
-  eps: number;
-  roe: number;
-  dividendYield: number;
+  marketCap?: number;
+  pe?: number;
+  pb?: number;
+  eps?: number;
+  roe?: number;
+  debtRatio?: number;
+  currentRatio?: number;
+  dividendYield?: number;
 }
 
 export default function StockDetail() {
@@ -61,8 +72,20 @@ export default function StockDetail() {
   // 获取盘口深度
   useEffect(() => {
     if (!symbol) return;
-    api.get<DepthData>(`/market/depth/${symbol}`)
-      .then(setDepth)
+    api.get<RawDepthData>(`/market/depth/${symbol}`)
+      .then((data) => {
+        const mappedDepth: DepthData = {
+          bids: (data.bid_prices || []).map((price: number, i: number) => ({
+            price,
+            volume: data.bid_volumes?.[i] ?? 0,
+          })),
+          asks: (data.ask_prices || []).map((price: number, i: number) => ({
+            price,
+            volume: data.ask_volumes?.[i] ?? 0,
+          })),
+        };
+        setDepth(mappedDepth);
+      })
       .catch(() => {
         setDepth({
           bids: [
@@ -265,27 +288,35 @@ export default function StockDetail() {
           <div className="fundamentals-grid">
             <div className="fundamental-item">
               <span className="fundamental-label">总市值</span>
-              <span className="fundamental-value">{formatNumber(fundamentals.marketCap)}</span>
+              <span className="fundamental-value">{fundamentals.marketCap != null ? formatNumber(fundamentals.marketCap) : '--'}</span>
             </div>
             <div className="fundamental-item">
               <span className="fundamental-label">市盈率(PE)</span>
-              <span className="fundamental-value">{fundamentals.pe.toFixed(2)}</span>
+              <span className="fundamental-value">{fundamentals.pe?.toFixed(2) ?? '--'}</span>
             </div>
             <div className="fundamental-item">
               <span className="fundamental-label">市净率(PB)</span>
-              <span className="fundamental-value">{fundamentals.pb.toFixed(2)}</span>
+              <span className="fundamental-value">{fundamentals.pb?.toFixed(2) ?? '--'}</span>
             </div>
             <div className="fundamental-item">
               <span className="fundamental-label">每股收益(EPS)</span>
-              <span className="fundamental-value">{fundamentals.eps.toFixed(2)}</span>
+              <span className="fundamental-value">{fundamentals.eps?.toFixed(2) ?? '--'}</span>
             </div>
             <div className="fundamental-item">
               <span className="fundamental-label">净资产收益率(ROE)</span>
-              <span className="fundamental-value">{fundamentals.roe.toFixed(2)}%</span>
+              <span className="fundamental-value">{fundamentals.roe != null ? `${fundamentals.roe.toFixed(2)}%` : '--'}</span>
             </div>
             <div className="fundamental-item">
               <span className="fundamental-label">股息率</span>
-              <span className="fundamental-value">{fundamentals.dividendYield.toFixed(2)}%</span>
+              <span className="fundamental-value">{fundamentals.dividendYield != null ? `${fundamentals.dividendYield.toFixed(2)}%` : '--'}</span>
+            </div>
+            <div className="fundamental-item">
+              <span className="fundamental-label">资产负债率</span>
+              <span className="fundamental-value">{fundamentals.debtRatio != null ? `${fundamentals.debtRatio.toFixed(2)}%` : '--'}</span>
+            </div>
+            <div className="fundamental-item">
+              <span className="fundamental-label">流动比率</span>
+              <span className="fundamental-value">{fundamentals.currentRatio?.toFixed(2) ?? '--'}</span>
             </div>
           </div>
         ) : (

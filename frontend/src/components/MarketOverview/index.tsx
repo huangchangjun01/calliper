@@ -15,7 +15,6 @@ const DEFAULT_INDICES: string[] = [
   'HSI',
   'SPX',
   'IXIC',
-  'N225',
 ];
 
 const INDEX_NAMES: Record<string, string> = {
@@ -24,7 +23,6 @@ const INDEX_NAMES: Record<string, string> = {
   HSI: '恒生指数',
   SPX: '标普500',
   IXIC: '纳斯达克',
-  N225: '日经225',
 };
 
 export default function MarketOverview({ className = '' }: MarketOverviewProps) {

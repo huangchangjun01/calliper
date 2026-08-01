@@ -3,11 +3,22 @@ import { Input, Radio, Button, Modal, message, Select, Spin } from 'antd';
 import { SearchOutlined } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
 import api from '@/services/api';
-import type { OrderRequest, StockSearchItem } from '@/types';
+import type { StockSearchItem } from '@/types';
+
+/** 下单请求体（对齐后端 /trading/orders 接口字段） */
+export interface OrderRequestBody {
+  symbol: string;
+  action: 'buy' | 'sell';
+  order_type: 'market' | 'limit';
+  price?: string;
+  quantity: number;
+  is_real: boolean;
+  trade_password?: string;
+}
 
 interface OrderFormProps {
   isReal: boolean;
-  onSubmit: (order: OrderRequest) => Promise<void>;
+  onSubmit: (order: OrderRequestBody) => Promise<void>;
 }
 
 const ORDER_SIDE_OPTIONS = [
@@ -34,8 +45,8 @@ export default function OrderForm({ isReal, onSubmit }: OrderFormProps) {
     queryKey: ['stockSearch', symbol],
     queryFn: async () => {
       if (!symbol || symbol.length < 1) return [];
-      const data = await api.get<StockSearchItem[]>('/stocks/search', { keyword: symbol });
-      return data;
+      const data = await api.get<{ stocks: StockSearchItem[] }>('/stocks/search', { q: symbol });
+      return data.stocks;
     },
     enabled: symbol.length >= 1,
     staleTime: 60000,
@@ -82,17 +93,18 @@ export default function OrderForm({ isReal, onSubmit }: OrderFormProps) {
       onOk: async () => {
         setSubmitting(true);
         try {
-          const order: OrderRequest = {
+          const order: OrderRequestBody = {
             symbol: symbol.trim(),
-            side,
-            type: orderType,
+            action: side,
+            order_type: orderType,
             quantity: Number(quantity),
+            is_real: isReal,
           };
           if (orderType === 'limit') {
-            order.price = Number(price);
+            order.price = String(price);
           }
           if (isReal) {
-            order.password = password;
+            order.trade_password = password;
           }
           await onSubmit(order);
           message.success('下单成功');

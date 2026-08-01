@@ -1,7 +1,6 @@
 package websocket
 
 import (
-	"encoding/json"
 	"sync"
 	"time"
 
@@ -24,9 +23,9 @@ const (
 
 // Message represents a WebSocket message.
 type Message struct {
-	Type    string          `json:"type"`
-	Channel string          `json:"channel,omitempty"`
-	Data    json.RawMessage `json:"data,omitempty"`
+	Type    string      `json:"type"`
+	Channel string      `json:"channel,omitempty"`
+	Data    interface{} `json:"data,omitempty"`
 }
 
 // Hub maintains the set of active clients and broadcasts messages to clients.

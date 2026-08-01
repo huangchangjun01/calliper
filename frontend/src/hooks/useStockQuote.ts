@@ -40,7 +40,7 @@ export default function useStockQuote(
   const handleMessage = useCallback((message: WsMessage) => {
     if (message.type !== 'quote' || !message.data) return;
 
-    const quote = message.data as StockQuote;
+    const quote = mapMarketData(message.data as Record<string, unknown>);
     if (!quote?.symbol) return;
 
     const prev = stocksRef.current.get(quote.symbol);

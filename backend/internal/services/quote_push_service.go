@@ -72,17 +72,11 @@ func (s *QuotePushService) PushQuote(symbol string, data MarketData) {
 	// Update Redis cache
 	s.UpdateRedisCache(data)
 
-	// Serialize and broadcast via WebSocket
-	jsonData, err := ToJSON(data)
-	if err != nil {
-		log.Printf("[QuotePushService] Failed to serialize quote for %s: %v", symbol, err)
-		return
-	}
-
+	// Broadcast via WebSocket; serialization is handled uniformly at send time.
 	msg := &ws.Message{
 		Type:    "quote",
 		Channel: "stock:" + symbol,
-		Data:    jsonData,
+		Data:    data,
 	}
 	s.hub.Broadcast <- msg
 }

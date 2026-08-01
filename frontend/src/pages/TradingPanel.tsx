@@ -2,12 +2,12 @@ import { useState, useCallback } from 'react';
 import { Tabs, Spin } from 'antd';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/services/api';
-import OrderForm from '@/components/OrderForm';
+import OrderForm, { type OrderRequestBody } from '@/components/OrderForm';
 import OrderList from '@/components/OrderList';
 import PositionList from '@/components/PositionList';
 import AccountOverview from '@/components/AccountOverview';
 import SimTradePanel from '@/components/SimTradePanel';
-import type { OrderRequest, Order, Position, AccountInfo, SimStatus } from '@/types';
+import type { Order, Position, AccountInfo, SimStatus } from '@/types';
 import './TradingPanel.css';
 
 const TAB_ITEMS = [
@@ -23,27 +23,51 @@ export default function TradingPanel() {
 
   const { data: orders, isLoading: ordersLoading } = useQuery({
     queryKey: ['orders'],
-    queryFn: () => api.get<Order[]>('/trading/orders'),
+    queryFn: async () => {
+      const data = await api.get<{ orders: Order[]; total: number; limit: number; offset: number }>('/trading/orders');
+      return data.orders;
+    },
     enabled: activeTab === 'real',
     refetchInterval: 10000,
   });
 
   const { data: positions, isLoading: positionsLoading } = useQuery({
     queryKey: ['positions'],
-    queryFn: () => api.get<Position[]>('/trading/positions'),
+    queryFn: async () => {
+      const data = await api.get<{ positions: Position[] }>('/trading/positions');
+      return data.positions;
+    },
     enabled: activeTab === 'real',
     refetchInterval: 10000,
   });
 
   const { data: account, isLoading: accountLoading } = useQuery({
     queryKey: ['account'],
-    queryFn: () => api.get<AccountInfo>('/trading/account'),
+    queryFn: async () => {
+      const data = await api.get<{
+        total_assets: number;
+        available_cash: number;
+        frozen_cash?: number;
+        market_value: number;
+        total_pnl: number;
+        today_pnl: number;
+        today_return: number;
+      }>('/trading/account');
+      return {
+        totalAsset: data.total_assets,
+        availableCash: data.available_cash,
+        marketValue: data.market_value,
+        totalProfit: data.total_pnl,
+        todayProfit: data.today_pnl,
+        todayProfitPercent: data.today_return,
+      } as AccountInfo;
+    },
     enabled: activeTab === 'real',
     refetchInterval: 10000,
   });
 
   const placeOrderMutation = useMutation({
-    mutationFn: (order: OrderRequest) => api.post('/trading/order', order),
+    mutationFn: (order: OrderRequestBody) => api.post('/trading/order', order),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['orders'] });
       queryClient.invalidateQueries({ queryKey: ['account'] });
@@ -58,7 +82,7 @@ export default function TradingPanel() {
     },
   });
 
-  const handlePlaceOrder = useCallback(async (order: OrderRequest) => {
+  const handlePlaceOrder = useCallback(async (order: OrderRequestBody) => {
     await placeOrderMutation.mutateAsync(order);
   }, [placeOrderMutation]);
 
@@ -70,7 +94,7 @@ export default function TradingPanel() {
 
   const { data: simStatus, isLoading: simLoading } = useQuery({
     queryKey: ['simStatus'],
-    queryFn: () => api.get<SimStatus>('/sim/status'),
+    queryFn: () => api.get<SimStatus>('/trading/sim/status'),
     enabled: activeTab === 'sim',
     refetchInterval: 15000,
   });
@@ -80,8 +104,8 @@ export default function TradingPanel() {
       // 根据当前状态切换 start/stop
       const isRunning = simStatus?.running;
       return isRunning
-        ? api.post('/sim/stop')
-        : api.post('/sim/start');
+        ? api.post('/trading/sim/stop')
+        : api.post('/trading/sim/start');
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['simStatus'] });

@@ -48,7 +48,7 @@ func (h *MarketHandler) GetRealtime(c *gin.Context) {
 	}
 
 	if len(data) > 0 {
-		c.JSON(http.StatusOK, gin.H{
+		success(c, gin.H{
 			"data": data[0],
 		})
 		return
@@ -93,7 +93,7 @@ func (h *MarketHandler) GetRealtimeBatch(c *gin.Context) {
 		allData = append(allData, data...)
 	}
 
-	c.JSON(http.StatusOK, gin.H{
+	success(c, gin.H{
 		"data":  allData,
 		"count": len(allData),
 	})
@@ -160,7 +160,7 @@ func (h *MarketHandler) GetKline(c *gin.Context) {
 	// Clean the data
 	cleaned := h.marketService.GetCleaner().CleanMarketData(data)
 
-	c.JSON(http.StatusOK, gin.H{
+	success(c, gin.H{
 		"symbol":   symbol,
 		"interval": interval,
 		"from":     from.Format("2006-01-02"),
@@ -188,7 +188,7 @@ func (h *MarketHandler) GetDepth(c *gin.Context) {
 
 	for _, md := range data {
 		if md.Symbol == symbol {
-			c.JSON(http.StatusOK, gin.H{
+			success(c, gin.H{
 				"symbol":      md.Symbol,
 				"bid_prices":  md.BidPrices,
 				"bid_volumes": md.BidVolumes,
@@ -515,36 +515,28 @@ func parseSinaIndexLine(def *indexDef, content string, nowTs int64) (IndexData, 
 // GetMarketStatistics returns aggregate market statistics.
 // GET /api/v1/market/statistics
 func (h *MarketHandler) GetMarketStatistics(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
-		"message": "success",
-		"data": gin.H{
-			"totalStocks":     0,
-			"advancing":       0,
-			"declining":       0,
-			"unchanged":       0,
-			"totalVolume":     0,
-			"totalAmount":     0,
-			"limitUp":         0,
-			"limitDown":       0,
-		},
+	success(c, gin.H{
+		"limitUpCount":   0,
+		"limitDownCount": 0,
+		"upCount":        0,
+		"downCount":      0,
+		"flatCount":      0,
+		"totalAmount":    0,
 	})
 }
 
 // GetFundamentals returns fundamental data for a stock.
 // GET /api/v1/market/fundamentals/:symbol
 func (h *MarketHandler) GetFundamentals(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
-		"message": "success",
-		"data": gin.H{
-			"marketCap":     0,
-			"pe":            0,
-			"pb":            0,
-			"roe":           0,
-			"debtRatio":     0,
-			"currentRatio":  0,
-		},
+	success(c, gin.H{
+		"marketCap":     0,
+		"pe":            0,
+		"pb":            0,
+		"roe":           0,
+		"debtRatio":     0,
+		"currentRatio":  0,
+		"eps":           0,
+		"dividendYield": 0,
 	})
 }
 

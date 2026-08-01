@@ -1,6 +1,7 @@
 package services
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -172,10 +173,115 @@ func (c *TencentCollector) parseLine(parts []string, symbol string, now time.Tim
 	}
 }
 
-// FetchHistoricalData fetches historical K-line data.
-// Tencent doesn't have a simple historical API, so we delegate to Sina.
+// sinaSymbol converts internal symbol to Sina Finance format.
+func (c *TencentCollector) sinaSymbol(symbol string) string {
+	upper := strings.ToUpper(symbol)
+	if strings.HasPrefix(upper, "6") || strings.HasPrefix(upper, "9") {
+		return "sh" + symbol
+	}
+	return "sz" + symbol
+}
+
+// FetchHistoricalData fetches historical K-line data via Sina Finance API.
 func (c *TencentCollector) FetchHistoricalData(symbol string, start, end time.Time, interval string) ([]MarketData, error) {
-	log.Printf("[Tencent] Historical data not supported, delegating to Sina for %s", symbol)
-	return nil, fmt.Errorf("tencent collector does not support historical data, use sina collector")
+	log.Printf("[Tencent->Sina] Fetching historical data for %s from %s to %s interval=%s",
+		symbol, start.Format("2006-01-02"), end.Format("2006-01-02"), interval)
+
+	scaleMap := map[string]string{
+		"1m": "5", "5m": "15", "15m": "30", "30m": "60",
+		"60m": "60", "1h": "60", "1d": "240", "1w": "1200",
+	}
+	scale, ok := scaleMap[interval]
+	if !ok {
+		scale = "240"
+	}
+	datalen := "200"
+	if interval == "1m" {
+		datalen = "240"
+	}
+
+	sinaCode := c.sinaSymbol(symbol)
+	url := fmt.Sprintf(
+		"https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol=%s&scale=%s&ma=no&datalen=%s",
+		sinaCode, scale, datalen,
+	)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Referer", "https://finance.sina.com.cn")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("HTTP error: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return nil, fmt.Errorf("read body: %w", err)
+	}
+
+	type KLineItem struct {
+		Day    string `json:"day"`
+		Open   string `json:"open"`
+		High   string `json:"high"`
+		Low    string `json:"low"`
+		Close  string `json:"close"`
+		Volume string `json:"volume"`
+	}
+
+	var items []KLineItem
+	if err := json.Unmarshal(body, &items); err != nil {
+		log.Printf("[Tencent->Sina] JSON parse error: %v, body: %s", err, string(body[:minInt(len(body), 200)]))
+		return nil, fmt.Errorf("parse JSON: %w", err)
+	}
+
+	var result []MarketData
+	for _, item := range items {
+		t, err := time.Parse("2006-01-02", item.Day)
+		if err != nil {
+			t, err = time.Parse("2006-01-02 15:04:05", item.Day)
+			if err != nil {
+				continue
+			}
+		}
+		if t.Before(start) || t.After(end) {
+			continue
+		}
+
+		open := parseFloatSafe(item.Open)
+		high := parseFloatSafe(item.High)
+		low := parseFloatSafe(item.Low)
+		closePrice := parseFloatSafe(item.Close)
+		volume := parseInt64Safe(item.Volume)
+
+		md := MarketData{
+			Symbol:     symbol,
+			Price:      closePrice,
+			Open:       open,
+			High:       high,
+			Low:        low,
+			Volume:     volume,
+			Timestamp:  t,
+			MarketCode: c.marketCode,
+		}
+
+		if len(result) > 0 {
+			md.PreClose = result[len(result)-1].Price
+		} else {
+			md.PreClose = open
+		}
+		if md.PreClose != 0 {
+			md.Change = md.Price - md.PreClose
+			md.ChangePercent = md.Change / md.PreClose * 100
+		}
+
+		result = append(result, md)
+	}
+
+	log.Printf("[Tencent->Sina] Fetched %d historical K-line records for %s", len(result), symbol)
+	return result, nil
 }
 
