@@ -140,8 +140,8 @@ func (c *TencentCollector) parseLine(parts []string, symbol string, now time.Tim
 	turnoverRate := parseFloatSafe(parts[38])
 	pe := parseFloatSafe(parts[39])
 	pb := parseFloatSafe(parts[46])
-	totalMarketCap := parseFloatSafe(parts[45])
-	floatMarketCap := parseFloatSafe(parts[44])
+	totalMarketCap := parseFloatSafe(parts[45]) * 1e8 // 亿元 → 元
+	floatMarketCap := parseFloatSafe(parts[44]) * 1e8  // 亿元 → 元
 
 	// If price fields are zero, compute from other fields
 	if price == 0 && prevClose != 0 && change != 0 {

@@ -528,14 +528,45 @@ func (h *MarketHandler) GetMarketStatistics(c *gin.Context) {
 // GetFundamentals returns fundamental data for a stock.
 // GET /api/v1/market/fundamentals/:symbol
 func (h *MarketHandler) GetFundamentals(c *gin.Context) {
+	symbol := c.Param("symbol")
+	if symbol == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "symbol is required"})
+		return
+	}
+
+	marketCode := h.detectMarketCode(symbol)
+
+	data, err := h.marketService.CollectMarketDataForSymbols(c.Request.Context(), marketCode, []string{symbol})
+	if err != nil || len(data) == 0 {
+		// Return empty data instead of error for better UX
+		success(c, gin.H{
+			"marketCap":     0,
+			"pe":            0,
+			"pb":            0,
+			"eps":           0,
+			"roe":           0,
+			"debtRatio":     0,
+			"currentRatio":  0,
+			"dividendYield": 0,
+		})
+		return
+	}
+
+	md := data[0]
+	// Calculate EPS from PE: EPS = Price / PE
+	eps := 0.0
+	if md.PE > 0 {
+		eps = md.Price / md.PE
+	}
+
 	success(c, gin.H{
-		"marketCap":     0,
-		"pe":            0,
-		"pb":            0,
+		"marketCap":     md.TotalMarketCap,
+		"pe":            md.PE,
+		"pb":            md.PB,
+		"eps":           eps,
 		"roe":           0,
 		"debtRatio":     0,
 		"currentRatio":  0,
-		"eps":           0,
 		"dividendYield": 0,
 	})
 }
