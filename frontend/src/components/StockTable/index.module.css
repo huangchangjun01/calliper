@@ -7,6 +7,7 @@
 
 .table {
   width: 100%;
+  table-layout: fixed;
   border-collapse: collapse;
   font-size: var(--font-size-sm);
 }
@@ -19,7 +20,7 @@
 
 .table th {
   padding: 10px 12px;
-  text-align: left;
+  text-align: center;
   font-weight: 600;
   font-size: var(--font-size-xs);
   color: var(--text-tertiary);
@@ -28,12 +29,6 @@
   white-space: nowrap;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-}
-
-.table th:nth-child(5),
-.table th:nth-child(6),
-.table th:nth-child(7) {
-  text-align: right;
 }
 
 .row {
@@ -54,6 +49,7 @@
   padding: 10px 12px;
   color: var(--text-primary);
   white-space: nowrap;
+  text-align: center;
 }
 
 .symbol {
@@ -74,18 +70,15 @@
 
 .marketCap {
   font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
-  text-align: right;
 }
 
 .price {
   font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
-  text-align: right;
   font-weight: 500;
 }
 
 .change {
   font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
-  text-align: right;
   font-weight: 600;
   padding: 2px 8px;
   border-radius: 4px;
