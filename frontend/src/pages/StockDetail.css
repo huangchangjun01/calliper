@@ -103,7 +103,7 @@
 .stock-detail-section-title {
   font-size: var(--font-size-sm);
   font-weight: 600;
-  color: var(--text-secondary);
+  color: var(--text-primary);
   margin-bottom: var(--spacing-md);
   padding-bottom: var(--spacing-sm);
   border-bottom: 1px solid var(--border-color);
@@ -127,11 +127,11 @@
 }
 
 .detail-value.up {
-  color: var(--color-error);
+  color: #cf1322;
 }
 
 .detail-value.down {
-  color: var(--color-success);
+  color: #389e0d;
 }
 
 /* ========== 中间：图表 ========== */
@@ -179,11 +179,11 @@
 }
 
 .depth-price.up {
-  color: var(--color-error);
+  color: #cf1322;
 }
 
 .depth-price.down {
-  color: var(--color-success);
+  color: #389e0d;
 }
 
 .depth-volume {
@@ -227,11 +227,11 @@
 }
 
 .depth-spread-value.up {
-  color: var(--color-error);
+  color: #cf1322;
 }
 
 .depth-spread-value.down {
-  color: var(--color-success);
+  color: #389e0d;
 }
 
 .stock-detail-no-data {
@@ -239,7 +239,7 @@
   align-items: center;
   justify-content: center;
   padding: var(--spacing-xl) 0;
-  color: var(--text-tertiary);
+  color: var(--text-secondary);
   font-size: var(--font-size-sm);
 }
 
@@ -270,7 +270,7 @@
 
 .fundamental-label {
   font-size: var(--font-size-xs);
-  color: var(--text-tertiary);
+  color: var(--text-secondary);
 }
 
 .fundamental-value {
@@ -302,4 +302,31 @@
   .stock-detail-change {
     justify-content: flex-start;
   }
+}
+
+/* ========== Ant Design 组件覆盖 ========== */
+
+.stock-detail-quote .ant-descriptions-item-label {
+  color: var(--text-secondary) !important;
+  font-weight: 500;
+}
+
+.stock-detail-quote .ant-descriptions-item-content {
+  color: var(--text-primary) !important;
+}
+
+.stock-detail-header-right.up .stock-detail-price-value {
+  color: #cf1322;
+}
+
+.stock-detail-header-right.down .stock-detail-price-value {
+  color: #389e0d;
+}
+
+.stock-detail-header-right.up .stock-detail-change {
+  color: #cf1322;
+}
+
+.stock-detail-header-right.down .stock-detail-change {
+  color: #389e0d;
 }
