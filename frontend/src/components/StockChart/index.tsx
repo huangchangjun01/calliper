@@ -81,13 +81,13 @@ export default function StockChart({
       axisPointer: {
         type: 'cross',
         crossStyle: {
-          color: 'var(--text-tertiary)',
+          color: '#999',
         },
       },
-      backgroundColor: 'rgba(20, 20, 20, 0.9)',
-      borderColor: '#333',
+      backgroundColor: 'rgba(20, 20, 20, 0.92)',
+      borderColor: '#444',
       textStyle: {
-        color: '#e0e0e0',
+        color: '#e8e8e8',
         fontSize: 12,
       },
     },
@@ -116,8 +116,8 @@ export default function StockChart({
             ? dayjs(item.timestamp).format('HH:mm')
             : dayjs(item.timestamp).format('MM-DD')
         ),
-        axisLine: { lineStyle: { color: 'var(--border-color)' } },
-        axisLabel: { color: 'var(--text-tertiary)', fontSize: 11 },
+        axisLine: { lineStyle: { color: '#bbb' } },
+        axisLabel: { color: '#666', fontSize: 11 },
         axisTick: { show: false },
       },
       {
@@ -128,7 +128,7 @@ export default function StockChart({
             ? dayjs(item.timestamp).format('HH:mm')
             : dayjs(item.timestamp).format('MM-DD')
         ),
-        axisLine: { lineStyle: { color: 'var(--border-color)' } },
+        axisLine: { lineStyle: { color: '#bbb' } },
         axisLabel: { show: false },
         axisTick: { show: false },
       },
@@ -139,14 +139,14 @@ export default function StockChart({
         scale: true,
         gridIndex: 0,
         axisLine: { show: false },
-        axisLabel: { color: 'var(--text-tertiary)', fontSize: 11 },
-        splitLine: { lineStyle: { color: 'var(--border-color)', type: 'dashed' as const } },
+        axisLabel: { color: '#666', fontSize: 11 },
+        splitLine: { lineStyle: { color: '#e8e8e8', type: 'dashed' as const } },
       },
       {
         type: 'value' as const,
         gridIndex: 1,
         axisLine: { show: false },
-        axisLabel: { color: 'var(--text-tertiary)', fontSize: 10 },
+        axisLabel: { color: '#666', fontSize: 10 },
         splitLine: { show: false },
       },
     ],
@@ -165,14 +165,14 @@ export default function StockChart({
               end: 100,
               height: 20,
               bottom: 0,
-              borderColor: 'var(--border-color)',
-              backgroundColor: 'var(--bg-container)',
+              borderColor: '#d9d9d9',
+              backgroundColor: '#f5f5f5',
               fillerColor: 'rgba(22, 119, 255, 0.1)',
               handleStyle: {
-                color: 'var(--color-primary)',
+                color: '#1677ff',
               },
               textStyle: {
-                color: 'var(--text-tertiary)',
+                color: '#666',
               },
             },
           ]),
@@ -208,7 +208,7 @@ export default function StockChart({
               silent: true,
               symbol: 'none' as const,
               lineStyle: {
-                color: 'var(--text-tertiary)',
+                color: '#bbb',
                 type: 'dashed' as const,
               },
               data: [
@@ -216,7 +216,7 @@ export default function StockChart({
                   yAxis: data.length > 0 ? data[0]?.close : undefined,
                   label: {
                     formatter: '昨收: {c}',
-                    color: 'var(--text-tertiary)',
+                    color: '#888',
                   },
                 },
               ],
