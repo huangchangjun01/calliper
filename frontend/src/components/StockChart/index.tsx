@@ -140,7 +140,7 @@ export default function StockChart({
         gridIndex: 0,
         axisLine: { show: false },
         axisLabel: { color: '#666', fontSize: 11 },
-        splitLine: { lineStyle: { color: '#eee', type: 'solid' as const, width: 1 } },
+        splitLine: { lineStyle: { color: '#f0f0f0', type: 'solid' as const, width: 1 } },
       },
       {
         type: 'value' as const,
