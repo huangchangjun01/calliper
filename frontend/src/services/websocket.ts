@@ -49,6 +49,9 @@ class WebSocketClient {
       try {
         const message: WsMessage = JSON.parse(event.data as string);
 
+        // 收到任何数据都表示连接健康，复位 40s 死链兜底定时器
+        this.resetPingTimer();
+
         // 处理心跳响应
         if (message.type === 'heartbeat') {
           return;
@@ -56,7 +59,8 @@ class WebSocketClient {
 
         this.emit('message', message);
       } catch {
-        // 忽略解析错误
+        // 接收到的数据无法解析（如服务端 pong 帧等）仍视为连接活跃，复位兜底定时器
+        this.resetPingTimer();
       }
     };
 

@@ -11,10 +11,35 @@ import (
 
 // RiskManager handles risk control for trading operations.
 type RiskManager struct {
-	redis           *redis.Client
+	redis            *redis.Client
 	singleTradeLimit decimal.Decimal
 	dailyTradeLimit  decimal.Decimal
 	maxTradesPerMin  int
+}
+
+// dailyLimitScript 原子执行"当日累计交易金额的限额判断 + 自增"。
+// 返回 -1 表示本次金额会使当日累计超过限额（未写入）；否则写入后返回新的累计值。
+// 这样可避免 check-then-incr 并发竞态，且仅在订单成功回调处调用，失败订单不占额度。
+var dailyLimitScript = redis.NewScript(`
+local key = KEYS[1]
+local amount = tonumber(ARGV[1])
+local limit = tonumber(ARGV[2])
+local ttlMs = tonumber(ARGV[3])
+local current = tonumber(redis.call('GET', key) or '0')
+if current + amount > limit then
+  return -1
+end
+redis.call('SET', key, current + amount, 'PX', ttlMs)
+return current + amount
+`)
+
+// dailyTradeKey 生成当日累计交易金额的 Redis key，日期统一使用 Asia/Shanghai。
+func dailyTradeKey(userID uint) string {
+	loc, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		loc = time.UTC
+	}
+	return fmt.Sprintf("daily_trade:%d:%s", userID, time.Now().In(loc).Format("2006-01-02"))
 }
 
 // NewRiskManager creates a new RiskManager with default limits.
@@ -51,15 +76,21 @@ func (r *RiskManager) ValidateOrder(ctx context.Context, userID uint, req PlaceO
 }
 
 // CheckDailyLimit checks whether the user's daily trading limit has been exceeded.
+// 这是一个下单前的只读预检；最终原子"判断+自增"在订单成功回调处的 RecordTrade
+// （Redis Lua 脚本）中完成，二者共用同一把日 key，日期统一 Asia/Shanghai。
 func (r *RiskManager) CheckDailyLimit(ctx context.Context, userID uint, newAmount decimal.Decimal) error {
 	if r.redis == nil {
 		return nil
 	}
 
-	todayKey := fmt.Sprintf("daily_trade:%d:%s", userID, time.Now().Format("2006-01-02"))
+	todayKey := dailyTradeKey(userID)
 	current, err := r.redis.Get(ctx, todayKey).Float64()
-	if err != nil && err != redis.Nil {
-		return fmt.Errorf("查询当日交易限额失败: %w", err)
+	if err != nil {
+		if err == redis.Nil {
+			current = 0
+		} else {
+			return fmt.Errorf("查询当日交易限额失败: %w", err)
+		}
 	}
 
 	currentTotal := decimal.NewFromFloat(current)
@@ -72,19 +103,29 @@ func (r *RiskManager) CheckDailyLimit(ctx context.Context, userID uint, newAmoun
 	return nil
 }
 
-// RecordTrade records the trade amount towards the daily limit in Redis.
+// RecordTrade atomically increments the daily traded amount in Redis via a Lua
+// script, enforcing the day limit in the same atomic op. Only call this from the
+// successful order callback so failed orders do not consume the quota.
 func (r *RiskManager) RecordTrade(ctx context.Context, userID uint, amount decimal.Decimal) error {
 	if r.redis == nil {
 		return nil
 	}
 
-	todayKey := fmt.Sprintf("daily_trade:%d:%s", userID, time.Now().Format("2006-01-02"))
-	if err := r.redis.IncrByFloat(ctx, todayKey, amount.InexactFloat64()).Err(); err != nil {
+	todayKey := dailyTradeKey(userID)
+	ttlMs := int64(time.Until(endOfDay()).Milliseconds())
+	if ttlMs < 0 {
+		ttlMs = 0
+	}
+
+	res, err := dailyLimitScript.Run(ctx, r.redis, []string{todayKey},
+		amount.InexactFloat64(), r.dailyTradeLimit.InexactFloat64(), ttlMs).Result()
+	if err != nil {
 		return fmt.Errorf("记录当日交易金额失败: %w", err)
 	}
 
-	// Set expiration to end of day
-	r.redis.ExpireAt(ctx, todayKey, endOfDay())
+	if v, ok := res.(int64); ok && v < 0 {
+		return fmt.Errorf("当日累计交易金额超过限额")
+	}
 
 	return nil
 }
@@ -117,8 +158,12 @@ func (r *RiskManager) DetectAnomaly(ctx context.Context, userID uint, req PlaceO
 	return false
 }
 
-// endOfDay returns the time at the end of the current day.
+// endOfDay returns the time at the end of the current day in Asia/Shanghai.
 func endOfDay() time.Time {
-	now := time.Now()
-	return time.Date(now.Year(), now.Month(), now.Day(), 23, 59, 59, 0, now.Location())
+	loc, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		loc = time.UTC
+	}
+	now := time.Now().In(loc)
+	return time.Date(now.Year(), now.Month(), now.Day(), 23, 59, 59, 0, loc)
 }

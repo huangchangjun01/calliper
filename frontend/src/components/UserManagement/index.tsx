@@ -14,8 +14,15 @@ import dayjs from 'dayjs';
 const ROLE_OPTIONS = [
   { value: 'admin', label: '管理员' },
   { value: 'user', label: '普通用户' },
-  { value: 'viewer', label: '只读用户' },
 ];
+
+// 创建时间格式化：Go 零时间（年份 < 2000）视为未知，显示 --
+const formatCreatedAt = (ts?: string | null): string => {
+  if (!ts) return '--';
+  const d = dayjs(ts);
+  if (!d.isValid() || d.year() < 2000) return '--';
+  return d.format('YYYY-MM-DD HH:mm');
+};
 
 export default function UserManagement() {
   const { data: users = [], isLoading } = useAdminUsers();
@@ -153,7 +160,7 @@ export default function UserManagement() {
       dataIndex: 'createdAt',
       key: 'createdAt',
       width: 160,
-      render: (ts: string) => dayjs(ts).format('YYYY-MM-DD HH:mm'),
+      render: (ts: string) => formatCreatedAt(ts),
     },
     {
       title: '操作',
@@ -206,6 +213,7 @@ export default function UserManagement() {
         loading={isLoading}
         pagination={false}
         size="middle"
+        locale={{ emptyText: '暂无数据' }}
       />
 
       {/* 添加用户弹窗 */}

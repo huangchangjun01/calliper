@@ -66,8 +66,17 @@ func (c *AkshareClient) fetchWithRetry(marketCode string) ([]StockRaw, error) {
 	return nil, fmt.Errorf("akshare: all %d attempts for %s failed: %w", c.RetryCfg.MaxRetries, marketCode, lastErr)
 }
 
-// doFetch fetches stock list from Sina Finance API.
+// doFetch fetches stock list from Sina Finance API, walking pages until the
+// last page is reached (or a hard cap is hit for protection). Network / parse
+// failures are returned as errors instead of silently falling back to fake data.
 func (c *AkshareClient) doFetch(marketCode string) ([]StockRaw, error) {
+	// Sina 单条股票返回结构
+	type SinaStockItem struct {
+		Symbol string `json:"symbol"`
+		Name   string `json:"name"`
+		Code   string `json:"code"`
+	}
+
 	// Map market code to Sina Finance node
 	nodeMap := map[string]string{
 		"SSE":  "sh_a",
@@ -80,45 +89,49 @@ func (c *AkshareClient) doFetch(marketCode string) ([]StockRaw, error) {
 		return nil, fmt.Errorf("unsupported market: %s", marketCode)
 	}
 
-	// Fetch up to 200 stocks per page
-	url := fmt.Sprintf(
-		"https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/Market_Center.getHQNodeData?page=1&num=200&sort=symbol&asc=1&node=%s",
-		node,
-	)
-
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Referer", "https://finance.sina.com.cn")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("HTTP error: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("read body: %w", err)
-	}
-
-	// Parse JSON response
-	type SinaStockItem struct {
-		Symbol string `json:"symbol"`
-		Name   string `json:"name"`
-		Code   string `json:"code"`
-	}
+	// 分页参数：每页 pageSize 只，最多拉取 maxPages 页（上限保护）。
+	const pageSize = 200
+	const maxPages = 30
 
 	var items []SinaStockItem
-	if err := json.Unmarshal(body, &items); err != nil {
-		log.Printf("[Akshare] JSON parse error for %s: %v", marketCode, err)
-		// Fall back to default stock list if API fails
-		return c.defaultStockList(marketCode), nil
+	for page := 1; page <= maxPages; page++ {
+		url := fmt.Sprintf(
+			"https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/Market_Center.getHQNodeData?page=%d&num=%d&sort=symbol&asc=1&node=%s",
+			page, pageSize, node,
+		)
+
+		req, err := http.NewRequest("GET", url, nil)
+		if err != nil {
+			return nil, fmt.Errorf("create request: %w", err)
+		}
+		req.Header.Set("Referer", "https://finance.sina.com.cn")
+
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("HTTP error at page %d: %w", page, err)
+		}
+
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			return nil, fmt.Errorf("read body at page %d: %w", page, err)
+		}
+
+		// Parse JSON response
+		var pageItems []SinaStockItem
+		if err := json.Unmarshal(body, &pageItems); err != nil {
+			// 不回落假数据：解析失败直接返回错误，交由上层决定。
+			return nil, fmt.Errorf("[Akshare] JSON parse error for %s page %d: %w", marketCode, page, err)
+		}
+
+		items = append(items, pageItems...)
+		if len(pageItems) < pageSize {
+			break // 已到最后一页
+		}
 	}
 
 	if len(items) == 0 {
-		return c.defaultStockList(marketCode), nil
+		return nil, fmt.Errorf("[Akshare] no stocks returned for market %s", marketCode)
 	}
 
 	var stocks []StockRaw

@@ -1,12 +1,15 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Spin, Statistic } from 'antd';
+import { Statistic, Card, Badge, Spin } from 'antd';
 import { CaretUpOutlined, CaretDownOutlined, MinusOutlined } from '@ant-design/icons';
 import MarketOverview from '@/components/MarketOverview';
 import StockChart from '@/components/StockChart';
+import DataState from '@/components/common/DataState';
+import InfoTip from '@/components/common/InfoTip';
+import { useDashboard } from '@/services/predictions';
 import api from '@/services/api';
 import useStockQuote from '@/hooks/useStockQuote';
-import type { StockQuote } from '@/types';
+import type { StockQuote, UnavailableSection } from '@/types';
 import '@/pages/Dashboard.css';
 
 interface WatchlistItem {
@@ -24,6 +27,24 @@ interface MarketStatistics {
   totalAmount: number;
 }
 
+function isUnavailable(section: unknown): section is UnavailableSection {
+  return (
+    !!section &&
+    typeof section === 'object' &&
+    (section as UnavailableSection).status === 'unavailable'
+  );
+}
+
+const UNAVAILABLE_MSG = '该数据源暂不可用，已降级处理';
+
+const DIRECTION_LABEL: Record<string, string> = { up: '看涨', down: '看跌', flat: '震荡' };
+
+const PERIOD_LABEL: Record<string, string> = { short: '短期', medium: '中短期', long: '长期' };
+
+function formatPercent(value: number | null | undefined) {
+  return value === null || value === undefined ? '--' : `${(value * 100).toFixed(1)}%`;
+}
+
 export default function Dashboard() {
   const navigate = useNavigate();
   const [watchlist, setWatchlist] = useState<WatchlistItem[]>([]);
@@ -34,6 +55,8 @@ export default function Dashboard() {
 
   const watchlistSymbols = watchlist.map((w) => w.symbol);
   const { stocks, changedSymbols } = useStockQuote(watchlistSymbols);
+
+  const { data: dashData, isLoading: dashLoading, refetch } = useDashboard();
 
   // 获取自选股列表
   useEffect(() => {
@@ -98,10 +121,181 @@ export default function Dashboard() {
     return stocks.get(symbol);
   };
 
+  const highConfidence = dashData?.high_confidence;
+  const accuracySummary = dashData?.accuracy_summary;
+  const riskAlerts = dashData?.risk_alerts;
+  const systemStatus = dashData?.system_status;
+
+  const renderSystemStatus = () => {
+    const isUnavail = isUnavailable(systemStatus);
+    const status = systemStatus as Exclude<typeof systemStatus, UnavailableSection>;
+    const body = () => {
+      if (!status) return null;
+      const health = status.model_health;
+      return (
+        <div className="dash-card-body">
+          <div className="dash-sys-row">
+            <span className="dash-sys-label"><InfoTip tip="股票列表最近一次成功同步的时间；超过 24 小时未同步会标记为数据陈旧并降级">最近同步</InfoTip></span>
+            <span className="dash-sys-value">
+              {status.last_sync ? new Date(status.last_sync).toLocaleString('zh-CN') : '--'}
+            </span>
+          </div>
+          <div className="dash-sys-row">
+            <span className="dash-sys-label"><InfoTip tip="ML 模型健康度；连续多日准确率低于阈值时自动暂停展示预测">模型状态</InfoTip></span>
+            <span className="dash-sys-value">
+              {health.suspend ? (
+                <Badge status="error" text={`已暂停展示${health.reason ? `：${health.reason}` : ''}`} />
+              ) : (
+                <Badge status="success" text="续用中" />
+              )}
+            </span>
+          </div>
+          {health.suspend && (
+            <div className="dash-sys-row">
+              <span className="dash-sys-label">连续低于阈值</span>
+              <span className="dash-sys-value">{health.consecutive_below_threshold ?? 0} 天</span>
+            </div>
+          )}
+          <div className="dash-sys-row">
+            <span className="dash-sys-label"><InfoTip tip="整体运行标记；任一数据源或同步异常时显示「降级运行」">系统状态</InfoTip></span>
+            <span className="dash-sys-value">
+              {status.degraded ? <Badge status="warning" text="降级运行" /> : <Badge status="success" text="正常" />}
+            </span>
+          </div>
+        </div>
+      );
+    };
+
+    return (
+      <DataState
+        loading={dashLoading}
+        error={isUnavail ? UNAVAILABLE_MSG : null}
+        onRetry={refetch}
+        isEmpty={!isUnavail && !status}
+        emptyText="暂无系统状态"
+      >
+        {body()}
+      </DataState>
+    );
+  };
+
   return (
     <div className="dashboard">
       {/* 顶部：市场概览 */}
       <MarketOverview />
+
+      {/* 决策支持卡片区 */}
+      <section className="dashboard-support">
+        <div className="dashboard-support-title">决策支持</div>
+        <div className="dashboard-support-grid">
+          <InfoTip title="今日高置信度标的" tip="按置信度降序展示当前待验证、且置信度 ≥ 阈值（默认 60%）的预测标的，帮助快速定位模型最看好的股票。点击条目可查看个股详情。">
+          <Card title="今日高置信度标的" className="dash-card" bordered={false}>
+            <DataState
+              loading={dashLoading}
+              error={isUnavailable(highConfidence) ? UNAVAILABLE_MSG : null}
+              onRetry={refetch}
+              isEmpty={!isUnavailable(highConfidence) && (!highConfidence || highConfidence.length === 0)}
+              emptyText="暂无高置信度标的"
+              emptyDescription="可切换预测周期或提交流行标的后再查看"
+            >
+              <ul className="dash-highconf-list">
+                {(Array.isArray(highConfidence) ? highConfidence : []).map((it) => (
+                  <li
+                    key={it.symbol}
+                    className="dash-highconf-item"
+                    onClick={() => navigate(`/stocks/${it.symbol}`)}
+                  >
+                    <div className="dash-highconf-main">
+                      <span className="dash-highconf-symbol">{it.symbol}</span>
+                      <span className="dash-highconf-name">{it.name}</span>
+                    </div>
+                    <div className="dash-highconf-sub">
+                      <span>{DIRECTION_LABEL[it.direction] ?? it.direction}</span>
+                      <span className="dash-highconf-period">{PERIOD_LABEL[it.period] ?? it.period}</span>
+                      <span className="dash-highconf-conf">{(it.confidence * 100).toFixed(0)}%</span>
+                      {it.target_price !== null && it.target_price !== undefined && (
+                        <span className="dash-highconf-price">¥{it.target_price.toFixed(2)}</span>
+                      )}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </DataState>
+          </Card>
+          </InfoTip>
+
+          <Card title={<InfoTip tip="展示预测模型的准确率统计：近 7 日、近 30 日、累计准确率与已评估样本数量。"><span>预测准确率摘要</span></InfoTip>} className="dash-card" bordered={false}>
+            <DataState
+              loading={dashLoading}
+              error={isUnavailable(accuracySummary) ? UNAVAILABLE_MSG : null}
+              onRetry={refetch}
+              isEmpty={!isUnavailable(accuracySummary) && !accuracySummary}
+              emptyText="暂无准确率数据"
+              emptyDescription="历史样本积累到一定数量后自动展示"
+            >
+              {accuracySummary && !isUnavailable(accuracySummary) && (
+                <div className="dash-acc-grid">
+                  <InfoTip tip="近 7 天已到期预测中判定正确的比例 = 正确数 ÷ 已评估数 × 100%">
+                  <div className="dash-acc-item">
+                    <span className="dash-acc-label">近7日</span>
+                    <span className="dash-acc-value">{formatPercent(accuracySummary.accuracy_7d)}</span>
+                  </div>
+                  </InfoTip>
+                  <InfoTip tip="近 30 天已到期预测中判定正确的比例">
+                  <div className="dash-acc-item">
+                    <span className="dash-acc-label">近30日</span>
+                    <span className="dash-acc-value">{formatPercent(accuracySummary.accuracy_30d)}</span>
+                  </div>
+                  </InfoTip>
+                  <InfoTip tip="全部已评估预测的累计正确率">
+                  <div className="dash-acc-item">
+                    <span className="dash-acc-label">累计</span>
+                    <span className="dash-acc-value">{formatPercent(accuracySummary.accuracy_total)}</span>
+                  </div>
+                  </InfoTip>
+                  <InfoTip tip="已产生判定结果（正确/错误）的预测总数；样本过少时准确率参考意义有限">
+                  <div className="dash-acc-item">
+                    <span className="dash-acc-label">已评估样本</span>
+                    <span className="dash-acc-value">
+                      {accuracySummary.total_evaluated === null || accuracySummary.total_evaluated === undefined
+                        ? '--'
+                        : accuracySummary.total_evaluated}
+                    </span>
+                  </div>
+                  </InfoTip>
+                </div>
+              )}
+            </DataState>
+          </Card>
+
+          <Card title={<InfoTip tip="连续 3 次及以上判定错误的预测标的，以及命中异常波动的事件，用于提示模型近期失准风险。"><span>风险提示</span></InfoTip>} className="dash-card" bordered={false}>
+            <DataState
+              loading={dashLoading}
+              error={isUnavailable(riskAlerts) ? UNAVAILABLE_MSG : null}
+              onRetry={refetch}
+              isEmpty={!isUnavailable(riskAlerts) && (!riskAlerts || riskAlerts.length === 0)}
+              emptyText="暂无风险提示"
+              emptyDescription="系统将就触发风控信号的标的给出风险提示"
+            >
+              <ul className="dash-risk-list">
+                {(Array.isArray(riskAlerts) ? riskAlerts : []).map((alert, idx) => (
+                  <li key={idx} className="dash-risk-item">
+                    <span className="dash-risk-title">
+                      {[alert.name, alert.symbol, alert.type].filter(Boolean).join(' · ') || '风险'}
+                    </span>
+                    <span className="dash-risk-msg">{alert.message || alert.content || '--'}</span>
+                    {alert.level && <Badge status="warning" text={alert.level} />}
+                  </li>
+                ))}
+              </ul>
+            </DataState>
+          </Card>
+
+          <Card title="系统状态" className="dash-card" bordered={false}>
+            {renderSystemStatus()}
+          </Card>
+        </div>
+      </section>
 
       {/* 中部：自选股 + 图表 */}
       <div className="dashboard-middle">
@@ -122,9 +316,9 @@ export default function Dashboard() {
                   <tr>
                     <th>代码</th>
                     <th>名称</th>
-                    <th className="col-right">最新价</th>
-                    <th className="col-right">涨跌幅</th>
-                    <th className="col-right">涨跌额</th>
+                    <th className="col-right"><InfoTip tip="最新成交价">最新价</InfoTip></th>
+                    <th className="col-right"><InfoTip tip="涨跌额 ÷ 昨收 × 100%">涨跌幅</InfoTip></th>
+                    <th className="col-right"><InfoTip tip="现价 − 昨收">涨跌额</InfoTip></th>
                   </tr>
                 </thead>
                 <tbody>

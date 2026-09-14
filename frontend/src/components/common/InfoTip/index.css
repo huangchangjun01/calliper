@@ -1,0 +1,38 @@
+/* InfoTip 新手引导提示组件样式 */
+
+.infotip-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.infotip-icon {
+  color: var(--text-tertiary, #8a94a6);
+  font-size: 13px;
+  vertical-align: -1px;
+  transition: color 0.2s ease;
+}
+
+.infotip-wrap:hover .infotip-icon,
+.infotip-icon:hover {
+  color: var(--primary, #1677ff);
+}
+
+/* Tooltip 弹出内容 */
+.infotip {
+  max-width: 320px;
+  line-height: 1.6;
+}
+
+.infotip-title {
+  font-weight: 600;
+  font-size: 13px;
+  margin-bottom: 4px;
+  color: #fff;
+}
+
+.infotip-body {
+  font-size: 12.5px;
+  color: rgba(255, 255, 255, 0.88);
+  white-space: pre-line;
+}

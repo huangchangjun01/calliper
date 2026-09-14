@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '@/stores/authStore';
 
@@ -43,6 +43,15 @@ const styles: Record<string, React.CSSProperties> = {
     border: '1px solid #ffccc7',
     borderRadius: 6,
     color: '#ff4d4f',
+    fontSize: 13,
+    marginBottom: 16,
+  },
+  success: {
+    padding: '10px 14px',
+    background: '#f6ffed',
+    border: '1px solid #b7eb8f',
+    borderRadius: 6,
+    color: '#52c41a',
     fontSize: 13,
     marginBottom: 16,
   },
@@ -99,12 +108,25 @@ const styles: Record<string, React.CSSProperties> = {
     opacity: 0.6,
     cursor: 'not-allowed',
   },
+  footer: {
+    marginTop: 20,
+    textAlign: 'center' as const,
+    fontSize: 14,
+    color: 'rgba(0,0,0,0.45)',
+  },
+  link: {
+    color: '#1677ff',
+    cursor: 'pointer',
+    textDecoration: 'none',
+    marginLeft: 4,
+  },
 };
 
 export default function LoginPage() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
   const [focusedField, setFocusedField] = useState<string | null>(null);
   const login = useAuthStore((s) => s.login);
@@ -113,9 +135,19 @@ export default function LoginPage() {
 
   const from = (location.state as { from?: string })?.from || '/';
 
+  // 注册成功跳转提示
+  useEffect(() => {
+    const state = location.state as { registered?: boolean } | null;
+    if (state?.registered) {
+      setSuccess('注册成功，请使用新账号登录');
+      window.history.replaceState({}, '', '/login');
+    }
+  }, [location.state]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setSuccess('');
 
     if (!username.trim() || !password.trim()) {
       setError('请输入用户名和密码');
@@ -149,6 +181,7 @@ export default function LoginPage() {
         </div>
 
         <form onSubmit={handleSubmit}>
+          {success && <div style={styles.success}>{success}</div>}
           {error && <div style={styles.error}>{error}</div>}
 
           <div style={styles.field}>
@@ -198,6 +231,16 @@ export default function LoginPage() {
             {loading ? '登录中...' : '登 录'}
           </button>
         </form>
+
+        <div style={styles.footer}>
+          没有账号？
+          <span
+            style={styles.link}
+            onClick={() => navigate('/register')}
+          >
+            去注册
+          </span>
+        </div>
       </div>
     </div>
   );

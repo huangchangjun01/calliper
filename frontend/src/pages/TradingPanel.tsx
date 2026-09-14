@@ -1,4 +1,5 @@
-import { useState, useCallback } from 'react';
+import { useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Tabs, Spin } from 'antd';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/services/api';
@@ -15,9 +16,65 @@ const TAB_ITEMS = [
   { key: 'sim', label: '模拟交易' },
 ];
 
+/** 后端 /trading/sim/status 返回的原始结构（snake_case） */
+interface SimStatusResponse {
+  running: boolean;
+  account: {
+    total_asset: number;
+    available_cash: number;
+    market_value: number;
+    today_profit: number;
+    today_profit_percent: number;
+    total_profit: number;
+    total_profit_percent: number;
+    initial_capital: number;
+    start_date: string;
+    is_running: boolean;
+  };
+  decisions: Array<{
+    id: number;
+    symbol: string;
+    name: string;
+    side: 'buy' | 'sell';
+    price: number;
+    quantity: number;
+    confidence: number;
+    reason: string;
+    created_at: string;
+  }>;
+  records: Array<{
+    id: number;
+    symbol: string;
+    name: string;
+    side: 'buy' | 'sell';
+    price: number;
+    quantity: number;
+    profit: number;
+    profit_percent: number;
+    created_at: string;
+  }>;
+  risk_control: {
+    max_daily_loss: number;
+    current_daily_loss: number;
+    max_position_ratio: number;
+    current_position_ratio: number;
+    max_single_stock_ratio: number;
+    status: 'normal' | 'warning' | 'danger';
+  };
+}
+
 export default function TradingPanel() {
-  const [activeTab, setActiveTab] = useState('real');
+  const [searchParams, setSearchParams] = useSearchParams();
+  // tab 状态写入 URL，离开/刷新后仍保留
+  const activeTab = searchParams.get('tab') === 'sim' ? 'sim' : 'real';
   const queryClient = useQueryClient();
+
+  const setActiveTab = useCallback((key: string) => {
+    const p = new URLSearchParams(searchParams);
+    if (key === 'sim') p.set('tab', 'sim');
+    else p.delete('tab');
+    setSearchParams(p, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   // ========== 真实交易数据 ==========
 
@@ -28,7 +85,7 @@ export default function TradingPanel() {
       return data.orders;
     },
     enabled: activeTab === 'real',
-    refetchInterval: 10000,
+    refetchInterval: 30000,
   });
 
   const { data: positions, isLoading: positionsLoading } = useQuery({
@@ -38,7 +95,7 @@ export default function TradingPanel() {
       return data.positions;
     },
     enabled: activeTab === 'real',
-    refetchInterval: 10000,
+    refetchInterval: 30000,
   });
 
   const { data: account, isLoading: accountLoading } = useQuery({
@@ -63,7 +120,7 @@ export default function TradingPanel() {
       } as AccountInfo;
     },
     enabled: activeTab === 'real',
-    refetchInterval: 10000,
+    refetchInterval: 30000,
   });
 
   const placeOrderMutation = useMutation({
@@ -92,9 +149,58 @@ export default function TradingPanel() {
 
   // ========== 模拟交易数据 ==========
 
-  const { data: simStatus, isLoading: simLoading } = useQuery({
+  const {
+    data: simStatus,
+    isLoading: simLoading,
+    refetch: refetchSimStatus,
+  } = useQuery({
     queryKey: ['simStatus'],
-    queryFn: () => api.get<SimStatus>('/trading/sim/status'),
+    queryFn: async () => {
+      const data = await api.get<SimStatusResponse>('/trading/sim/status');
+      return {
+        running: data.running,
+        account: {
+          totalAsset: data.account.total_asset,
+          availableCash: data.account.available_cash,
+          marketValue: data.account.market_value,
+          todayProfit: data.account.today_profit,
+          todayProfitPercent: data.account.today_profit_percent,
+          totalProfit: data.account.total_profit,
+          totalProfitPercent: data.account.total_profit_percent,
+          riskLevel: '',
+        } as AccountInfo,
+        decisions: data.decisions.map((d) => ({
+          id: String(d.id),
+          symbol: d.symbol,
+          name: d.name,
+          side: d.side,
+          price: d.price,
+          quantity: d.quantity,
+          confidence: d.confidence,
+          reason: d.reason,
+          createdAt: d.created_at,
+        })),
+        records: data.records.map((r) => ({
+          id: String(r.id),
+          symbol: r.symbol,
+          name: r.name,
+          side: r.side,
+          price: r.price,
+          quantity: r.quantity,
+          profit: r.profit,
+          profitPercent: r.profit_percent,
+          createdAt: r.created_at,
+        })),
+        riskControl: {
+          maxDailyLoss: data.risk_control.max_daily_loss,
+          currentDailyLoss: data.risk_control.current_daily_loss,
+          maxPositionRatio: data.risk_control.max_position_ratio,
+          currentPositionRatio: data.risk_control.current_position_ratio,
+          maxSingleStockRatio: data.risk_control.max_single_stock_ratio,
+          status: data.risk_control.status,
+        },
+      } as SimStatus;
+    },
     enabled: activeTab === 'sim',
     refetchInterval: 15000,
   });
@@ -108,7 +214,8 @@ export default function TradingPanel() {
         : api.post('/trading/sim/start');
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['simStatus'] });
+      // 启停成功后立即拉取最新状态，避免等待 15s 轮询才更新「运行中/已停止」显示
+      refetchSimStatus();
     },
   });
 

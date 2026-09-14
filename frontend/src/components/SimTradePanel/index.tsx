@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { Table, Switch, Tag, Progress, message } from 'antd';
+import { Button, Table, Switch, Tag, Progress, message, Modal, Segmented } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { PlayCircleOutlined, PauseCircleOutlined } from '@ant-design/icons';
+import { PlayCircleOutlined, PauseCircleOutlined, HistoryOutlined } from '@ant-design/icons';
 import type { SimStatus, SimDecision, SimRecord } from '@/types';
+import api from '@/services/api';
 import dayjs from 'dayjs';
 
 interface SimTradePanelProps {
@@ -24,17 +25,81 @@ const RISK_STATUS_MAP: Record<string, { label: string; color: string }> = {
 
 export default function SimTradePanel({ simStatus, loading, onToggle }: SimTradePanelProps) {
   const [toggling, setToggling] = useState(false);
+  const running = simStatus?.running ?? false;
 
-  const handleToggle = async () => {
+  // 历史决策弹框
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyDates, setHistoryDates] = useState<string[]>([]);
+  const [historyDate, setHistoryDate] = useState<string | null>(null);
+  const [historyRecords, setHistoryRecords] = useState<SimRecord[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [datesLoading, setDatesLoading] = useState(false);
+
+  const openHistory = async () => {
+    setHistoryOpen(true);
+    setDatesLoading(true);
+    try {
+      const data = await api.get<{ dates: string[] }>('/trading/sim/history/dates');
+      setHistoryDates(data.dates || []);
+      if (data.dates?.length > 0) {
+        setHistoryDate(data.dates[0]);
+        await loadHistory(data.dates[0]);
+      } else {
+        setHistoryDate(null);
+        setHistoryRecords([]);
+      }
+    } catch {
+      message.error('获取历史决策日期失败');
+    } finally {
+      setDatesLoading(false);
+    }
+  };
+
+  const loadHistory = async (date: string) => {
+    setHistoryLoading(true);
+    try {
+      const data = await api.get<{ records: SimRecord[] }>('/trading/sim/history', { date });
+      setHistoryRecords(data.records || []);
+    } catch {
+      message.error('获取历史决策记录失败');
+      setHistoryRecords([]);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  const handleHistoryDateChange = (val: string) => {
+    setHistoryDate(val);
+    loadHistory(val);
+  };
+
+  const doToggle = async () => {
     setToggling(true);
     try {
       await onToggle();
-      message.success(simStatus?.running ? '模拟交易已停止' : '模拟交易已启动');
+      message.success(running ? '模拟交易已停止' : '模拟交易已启动');
     } catch {
       message.error('操作失败');
     } finally {
       setToggling(false);
     }
+  };
+
+  const handleToggle = async () => {
+    // 停止模拟交易属于资金/状态变更操作，需二次确认，防止误触
+    if (running) {
+      Modal.confirm({
+        title: '停止模拟交易',
+        content: '停止后将暂停策略自动交易与实时决策推送。确定要停止吗？',
+        okText: '确认停止',
+        cancelText: '取消',
+        okButtonProps: { danger: true },
+        centered: true,
+        onOk: doToggle,
+      });
+      return;
+    }
+    await doToggle();
   };
 
   const decisionColumns: ColumnsType<SimDecision> = [
@@ -173,7 +238,6 @@ export default function SimTradePanel({ simStatus, loading, onToggle }: SimTrade
     },
   ];
 
-  const running = simStatus?.running ?? false;
   const risk = simStatus?.riskControl;
 
   return (
@@ -187,6 +251,13 @@ export default function SimTradePanel({ simStatus, loading, onToggle }: SimTrade
           </Tag>
         </div>
         <div className="sim-trade-status-right">
+          <Button
+            className="sim-trade-history-btn"
+            icon={<HistoryOutlined />}
+            onClick={openHistory}
+          >
+            历史决策
+          </Button>
           <Switch
             checked={running}
             loading={toggling}
@@ -216,6 +287,15 @@ export default function SimTradePanel({ simStatus, loading, onToggle }: SimTrade
             <span className="sim-trade-account-label">今日盈亏</span>
             <span className={`sim-trade-account-value ${simStatus.account.todayProfit >= 0 ? 'profit-up' : 'profit-down'}`}>
               {simStatus.account.todayProfit >= 0 ? '+' : ''}{simStatus.account.todayProfit.toFixed(2)}
+            </span>
+          </div>
+          <div className="sim-trade-account-item">
+            <span className="sim-trade-account-label">累计收益</span>
+            <span className={`sim-trade-account-value ${simStatus.account.totalProfit >= 0 ? 'profit-up' : 'profit-down'}`}>
+              {simStatus.account.totalProfit >= 0 ? '+' : ''}{simStatus.account.totalProfit.toFixed(2)}
+            </span>
+            <span className={`sim-trade-account-extra ${simStatus.account.totalProfitPercent >= 0 ? 'profit-up' : 'profit-down'}`}>
+              {simStatus.account.totalProfitPercent >= 0 ? '+' : ''}{simStatus.account.totalProfitPercent.toFixed(2)}%
             </span>
           </div>
         </div>
@@ -289,6 +369,44 @@ export default function SimTradePanel({ simStatus, loading, onToggle }: SimTrade
           locale={{ emptyText: '暂无交易记录' }}
         />
       </div>
+
+      {/* 历史决策弹框 */}
+      <Modal
+        title="历史决策"
+        open={historyOpen}
+        onCancel={() => setHistoryOpen(false)}
+        footer={null}
+        width={720}
+        centered
+      >
+        <div className="sim-trade-history">
+          <div className="sim-trade-history-dates">
+            <span className="sim-trade-history-dates-label">选择日期：</span>
+            {datesLoading ? (
+              <Tag>加载中...</Tag>
+            ) : historyDates.length > 0 ? (
+              <Segmented
+                size="small"
+                value={historyDate || undefined}
+                options={historyDates.map((d) => ({ label: d, value: d }))}
+                onChange={(val) => handleHistoryDateChange(String(val))}
+              />
+            ) : (
+              <Tag>暂无历史决策</Tag>
+            )}
+          </div>
+          <Table
+            columns={recordColumns}
+            dataSource={historyRecords}
+            rowKey="id"
+            loading={historyLoading}
+            size="small"
+            pagination={{ pageSize: 10, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }}
+            scroll={{ x: 690 }}
+            locale={{ emptyText: '该日期暂无决策记录' }}
+          />
+        </div>
+      </Modal>
     </div>
   );
 }

@@ -2,11 +2,45 @@ import { memo, useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useThemeStore } from '@/stores/themeStore';
 import { useAuthStore } from '@/stores/authStore';
+import useWsConnectionStatus from '@/hooks/useWsConnectionStatus';
 
 interface HeaderProps {
   collapsed: boolean;
   onToggle: () => void;
   title: string;
+}
+
+const WS_STATUS_META: Record<string, { label: string; color: string; bg: string }> = {
+  connected: { label: '已连接', color: '#52c41a', bg: 'rgba(82,196,26,0.12)' },
+  connecting: { label: '连接中', color: '#1677ff', bg: 'rgba(22,119,255,0.12)' },
+  reconnecting: { label: '重连中', color: '#fa8c16', bg: 'rgba(250,140,22,0.14)' },
+  disconnected: { label: '已断开', color: '#ff4d4f', bg: 'rgba(255,77,79,0.12)' },
+};
+
+function WsStatusPill() {
+  const { status } = useWsConnectionStatus();
+  const meta = WS_STATUS_META[status] || WS_STATUS_META.disconnected;
+  return (
+    <span
+      className="header-ws-pill"
+      title="WebSocket 实时连接状态"
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 4,
+        padding: '2px 8px',
+        borderRadius: 999,
+        fontSize: 11,
+        lineHeight: '16px',
+        color: meta.color,
+        background: meta.bg,
+        whiteSpace: 'nowrap',
+      }}
+    >
+      <span style={{ width: 6, height: 6, borderRadius: '50%', background: meta.color }} />
+      {meta.label}
+    </span>
+  );
 }
 
 const Header = memo(function Header({ collapsed, onToggle, title }: HeaderProps) {
@@ -48,8 +82,11 @@ const Header = memo(function Header({ collapsed, onToggle, title }: HeaderProps)
         <h2 className="header-title">{title}</h2>
       </div>
 
-      {/* 右侧：主题切换 + 用户信息 */}
+      {/* 右侧：连接状态 + 主题切换 + 用户信息 */}
       <div className="header-right">
+        {/* WebSocket 连接状态 */}
+        <WsStatusPill />
+
         {/* 主题切换 */}
         <button
           className="header-theme-btn"
@@ -104,6 +141,13 @@ const Header = memo(function Header({ collapsed, onToggle, title }: HeaderProps)
                 <span className="user-info-name">{user?.username || '未登录'}</span>
                 <span className="user-info-email">{user?.email || ''}</span>
               </div>
+              <div className="dropdown-divider" />
+              <button
+                className="dropdown-item"
+                onClick={() => { setDropdownOpen(false); navigate('/account'); }}
+              >
+                账号设置
+              </button>
               <div className="dropdown-divider" />
               <button className="dropdown-item" onClick={() => { logout(); setDropdownOpen(false); navigate('/login'); }}>
                 退出登录

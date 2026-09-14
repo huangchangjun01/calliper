@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"net/http"
-	"strconv"
 
 	"github.com/gin-gonic/gin"
 
@@ -67,8 +66,7 @@ func (h *StockHandler) SearchStocks(c *gin.Context) {
 
 	query := c.Query("q")
 	marketCode := c.Query("market")
-	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
-	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
+	limit, offset, _ := parsePageLimit(c.DefaultQuery("limit", "20"), c.DefaultQuery("offset", "0"), 20)
 
 	stocks, total, err := h.stockService.SearchStocks(query, marketCode, limit, offset)
 	if err != nil {
@@ -92,8 +90,7 @@ func (h *StockHandler) GetStocksByMarket(c *gin.Context) {
 	}
 
 	marketCode := c.Param("code")
-	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
-	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
+	limit, offset, _ := parsePageLimit(c.DefaultQuery("limit", "20"), c.DefaultQuery("offset", "0"), 20)
 
 	stocks, total, err := h.stockService.GetStocksByMarket(marketCode, limit, offset)
 	if err != nil {

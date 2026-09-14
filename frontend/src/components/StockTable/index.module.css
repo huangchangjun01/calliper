@@ -21,9 +21,9 @@
 .table th {
   padding: 10px 12px;
   text-align: center;
-  font-weight: 600;
-  font-size: var(--font-size-xs);
-  color: var(--text-tertiary);
+  font-weight: 500;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
   background: var(--bg-container);
   border-bottom: 1px solid var(--border-color);
   white-space: nowrap;

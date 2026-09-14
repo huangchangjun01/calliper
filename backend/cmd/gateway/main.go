@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/signal"
 	"runtime/debug"
-	"strings"
 	"syscall"
 	"time"
 
@@ -21,6 +20,7 @@ import (
 	"github.com/quant-trading/backend/internal/handlers"
 	"github.com/quant-trading/backend/internal/middleware"
 	"github.com/quant-trading/backend/internal/services"
+	"github.com/quant-trading/backend/internal/util"
 	ws "github.com/quant-trading/backend/internal/websocket"
 )
 
@@ -80,16 +80,10 @@ func main() {
 	if db != nil {
 		tsdb = database.GetTSDB()
 	}
-	// Only configure Kafka if brokers are actually set; otherwise the
-	// market data service will use a no-op producer to avoid panics.
-	var kafkaBrokers []string
-	if strings.TrimSpace(cfg.KafkaBrokers) != "" {
-		kafkaBrokers = strings.Split(cfg.KafkaBrokers, ",")
-	}
 	marketService := services.NewMarketDataService(services.MarketDataServiceConfig{
+		DB:           db,
 		TSDB:         tsdb,
 		Redis:        rdb,
-		KafkaBrokers: kafkaBrokers,
 		MLServiceURL: "http://ml-service:8000",
 	})
 
@@ -102,7 +96,7 @@ func main() {
 	// Global middleware
 	router.Use(gin.Logger())
 	router.Use(gin.Recovery())
-	router.Use(middleware.CORSMiddleware([]string{"*"}))
+	router.Use(middleware.CORSMiddleware(cfg.CORSAllowedOrigins))
 
 	// Rate limiting (if Redis is available)
 	if rdb != nil {
@@ -120,7 +114,7 @@ func main() {
 
 	// Initialize WebSocket Hub
 	hub := ws.NewHub()
-	go hub.Run()
+	util.SafeGo(hub.Run)
 
 	// Background context for long-running services
 	bgCtx, bgCancel := context.WithCancel(context.Background())
@@ -141,6 +135,12 @@ func main() {
 	// Start market data collection loop (periodic polling from Sina/Yahoo Finance)
 	marketService.StartCollection(bgCtx)
 
+	// Start stock sync scheduler (auto sync on startup if empty + periodic re-sync)
+	stockSyncScheduler := services.NewStockSyncScheduler(stockService)
+	if stockSyncScheduler != nil {
+		stockSyncScheduler.Start(bgCtx)
+	}
+
 	// Initialize watchlist service
 	var watchlistService *services.WatchlistService
 	if db != nil {
@@ -148,17 +148,18 @@ func main() {
 	}
 
 	// WebSocket handler
-	wsHandler := handlers.NewWsHandler(hub, cfg.JWTSecret, subManager, quotePushService)
+	wsHandler := handlers.NewWsHandler(hub, cfg.JWTSecret, cfg.CORSAllowedOrigins, subManager, quotePushService)
 	router.GET("/ws", wsHandler.HandleWebSocket)
 
 	// Initialize trading components
-	mockBroker := services.NewMockBroker(db)
+	mockBroker := services.NewMockBroker(db, tsdb)
 	tradeService := services.NewTradeService(db, mockBroker, rdb)
-	tradeHandler := handlers.NewTradeHandler(tradeService)
+	tradeHandler := handlers.NewTradeHandler(tradeService, db, cfg.RealTradingEnabled)
 
 	// Initialize prediction service
 	mlServiceURL := fmt.Sprintf("http://%s:8000", getEnvDefault("ML_SERVICE_HOST", "ml-service"))
-	predictionService := services.NewPredictionService(mlServiceURL)
+	predictionService := services.NewPredictionService(mlServiceURL, cfg.MLAPIKey)
+	predictionService.SetDB(db)
 	predictionHandler := handlers.NewPredictionHandler(predictionService)
 
 	// Initialize simulated trading components
@@ -183,17 +184,25 @@ func main() {
 
 	// Initialize evaluation service
 	evaluationService := services.NewEvaluationService(db, tsdb)
+	evaluationService.SetThresholds(cfg.EvalAccuracySuspendThreshold, cfg.EvalRetrainThreshold)
+	evaluationService.SetHighConfidenceThreshold(float64(cfg.PredHighConfidenceThreshold))
 	evaluationScheduler := services.NewEvaluationScheduler(evaluationService)
 	evaluationHandler := handlers.NewEvaluationHandler(evaluationService, evaluationScheduler)
 
 	// Wire evaluation service to prediction handler for accuracy endpoints
 	predictionHandler.SetEvaluationService(evaluationService)
 
+	// Initialize dashboard handler (decision-support aggregation)
+	dashboardHandler := handlers.NewDashboardHandler(evaluationService, predictionService)
+
 	// Start evaluation scheduler
 	evaluationScheduler.Start(bgCtx)
 
 	// Initialize admin handler
-	adminHandler := handlers.NewAdminHandler(db)
+	adminHandler := handlers.NewAdminHandler(db, rdb, tsdb, stockService, marketService)
+
+	// Initialize personal account handler
+	accountHandler := handlers.NewAccountHandler(db)
 
 	// Initialize handlers
 	authHandler := handlers.NewAuthHandler(cfg.JWTSecret, cfg.JWTExpiration, db)
@@ -250,18 +259,24 @@ func main() {
 				market.GET("/fundamentals/:symbol", marketHandler.GetFundamentals)
 			}
 
+			// Decision-support dashboard
+			protected.GET("/dashboard", dashboardHandler.GetDashboard)
+
 			// Predictions
 			predictions := protected.Group("/predictions")
 			{
 				predictions.GET("/summaries", predictionHandler.GetSummaries)
 				predictions.GET("/details", predictionHandler.GetDetails)
+				predictions.GET("/history", predictionHandler.GetPredictionHistory)
+				predictions.GET("/stats", predictionHandler.GetPredictionStats)
 				predictions.GET("/accuracy", predictionHandler.GetAccuracyTrend)
 				predictions.GET("/stock-accuracy", predictionHandler.GetStockAccuracy)
 				predictions.GET("/failures", predictionHandler.GetFailures)
 				predictions.GET("/accuracy/:symbol", predictionHandler.GetPredictionAccuracy)
-				predictions.GET("/:symbol/history", predictionHandler.GetPredictionHistory)
+				predictions.GET("/:symbol/history", predictionHandler.GetSymbolHistory)
 				predictions.GET("/:symbol", predictionHandler.GetPrediction)
 				predictions.POST("/batch", predictionHandler.BatchPredict)
+				predictions.POST("/generate", predictionHandler.GeneratePredictions)
 			}
 
 			// Evaluation
@@ -272,6 +287,14 @@ func main() {
 				evaluation.GET("/ranking", evaluationHandler.GetRanking)
 				evaluation.GET("/metrics/:symbol", evaluationHandler.GetMetrics)
 				evaluation.GET("/failure/:symbol", evaluationHandler.GetFailureAnalysis)
+			}
+
+			// Personal account management
+			account := protected.Group("/account")
+			{
+				account.GET("/me", accountHandler.GetMe)
+				account.PUT("/me", accountHandler.UpdateMe)
+				account.PUT("/me/password", accountHandler.ChangePassword)
 			}
 
 			// Trading
@@ -291,7 +314,10 @@ func main() {
 						sim.GET("/status", simTradeHandler.GetStatus)
 						sim.POST("/start", simTradeHandler.StartSimTrading)
 						sim.POST("/stop", simTradeHandler.StopSimTrading)
+						sim.POST("/trigger", simTradeHandler.TriggerSimTrading)
 						sim.GET("/decisions", simTradeHandler.GetDecisions)
+						sim.GET("/history/dates", simTradeHandler.GetHistoryDates)
+						sim.GET("/history", simTradeHandler.GetHistoryByDate)
 						sim.GET("/account", simTradeHandler.GetAccount)
 						sim.GET("/positions", simTradeHandler.GetPositions)
 						sim.GET("/trades", simTradeHandler.GetTrades)
@@ -306,18 +332,31 @@ func main() {
 		admin.Use(middleware.AdminMiddleware())
 		{
 			admin.GET("/users", adminHandler.ListUsers)
+			admin.POST("/users", adminHandler.CreateUser)
 			admin.GET("/users/:id", adminHandler.GetUser)
 			admin.PUT("/users/:id", adminHandler.UpdateUser)
+			admin.DELETE("/users/:id", adminHandler.DeleteUser)
 			admin.GET("/audit-log", adminHandler.ListAuditLogs)
 			admin.GET("/system/status", adminHandler.GetSystemStatus)
 			admin.POST("/predictions/run", predictionHandler.TriggerPrediction)
 			admin.GET("/models/status", predictionHandler.GetModelStatus)
 			admin.POST("/evaluation/run", evaluationHandler.RunEvaluation)
 			admin.GET("/datasources", adminHandler.GetDataSources)
+			admin.PUT("/datasources/:id", adminHandler.UpdateDataSource)
+			admin.PATCH("/datasources/:id", adminHandler.ToggleDataSource)
+			admin.POST("/datasources/:id/sync", adminHandler.TriggerDataSourceSync)
 			admin.GET("/health", adminHandler.GetServiceHealth)
 			admin.GET("/errors", adminHandler.GetErrorLogs)
 			admin.GET("/latency", adminHandler.GetDataLatency)
 			admin.GET("/models", adminHandler.GetModels)
+			admin.GET("/training/history", adminHandler.GetTrainingHistory)
+			admin.POST("/training/run", adminHandler.RunTraining)
+			admin.GET("/training/schedule", adminHandler.GetTrainingSchedule)
+			admin.POST("/training/rollback", adminHandler.RollbackModel)
+			admin.GET("/models/:id/params", adminHandler.GetModelParams)
+			admin.PUT("/models/:id/params", adminHandler.UpdateModelParams)
+			admin.POST("/models/:id/evaluate", adminHandler.EvaluateModel)
+			admin.POST("/models/:id/predict", adminHandler.PredictModel)
 		}
 	}
 
@@ -328,12 +367,12 @@ func main() {
 	}
 
 	// Start server in a goroutine
-	go func() {
+	util.SafeGo(func() {
 		log.Printf("API Gateway starting on port %s", cfg.ServerPort)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Failed to start server: %v", err)
 		}
-	}()
+	})
 
 	// Graceful shutdown
 	quit := make(chan os.Signal, 1)

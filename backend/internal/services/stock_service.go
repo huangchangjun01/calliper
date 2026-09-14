@@ -10,6 +10,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/quant-trading/backend/internal/models"
 )
@@ -80,48 +81,32 @@ func (s *StockService) SyncStocksFromMarket(marketCode string) error {
 		}
 	}
 
-	// Upsert each stock
+	// 批量幂等 upsert：以 symbol 为唯一键，冲突时更新股票元数据。
+	records := make([]models.Stock, 0, len(stocks))
 	for _, raw := range stocks {
-		var stock models.Stock
-		result := s.db.Where("symbol = ? AND market_id = ?", raw.Symbol, market.ID).First(&stock)
+		records = append(records, models.Stock{
+			Symbol:    raw.Symbol,
+			Name:      raw.Name,
+			NameCN:    raw.NameCN,
+			MarketID:  market.ID,
+			Exchange:  raw.Exchange,
+			Industry:  raw.Industry,
+			Sector:    raw.Sector,
+			MarketCap: raw.MarketCap,
+			Currency:  raw.Currency,
+			LotSize:   raw.LotSize,
+			IsActive:  raw.IsActive,
+		})
+	}
 
-		if result.Error == gorm.ErrRecordNotFound {
-			stock = models.Stock{
-				Symbol:    raw.Symbol,
-				Name:      raw.Name,
-				NameCN:    raw.NameCN,
-				MarketID:  market.ID,
-				Exchange:  raw.Exchange,
-				Industry:  raw.Industry,
-				Sector:    raw.Sector,
-				MarketCap: raw.MarketCap,
-				Currency:  raw.Currency,
-				LotSize:   raw.LotSize,
-				IsActive:  raw.IsActive,
-				CreatedAt: time.Now(),
-				UpdatedAt: time.Now(),
-			}
-			if createErr := s.db.Create(&stock).Error; createErr != nil {
-				log.Printf("stock_service: create stock %s: %v", raw.Symbol, createErr)
-				continue
-			}
-		} else if result.Error == nil {
-			stock.Name = raw.Name
-			stock.NameCN = raw.NameCN
-			stock.Exchange = raw.Exchange
-			stock.Industry = raw.Industry
-			stock.Sector = raw.Sector
-			stock.MarketCap = raw.MarketCap
-			stock.Currency = raw.Currency
-			stock.LotSize = raw.LotSize
-			stock.IsActive = raw.IsActive
-			stock.UpdatedAt = time.Now()
-			if saveErr := s.db.Save(&stock).Error; saveErr != nil {
-				log.Printf("stock_service: update stock %s: %v", raw.Symbol, saveErr)
-			}
-		} else {
-			log.Printf("stock_service: lookup stock %s: %v", raw.Symbol, result.Error)
-		}
+	if err := s.db.Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "symbol"}},
+		DoUpdates: clause.AssignmentColumns([]string{
+			"name", "name_cn", "exchange", "industry", "sector",
+			"market_cap", "currency", "lot_size", "is_active", "updated_at",
+		}),
+	}).CreateInBatches(records, 200).Error; err != nil {
+		return fmt.Errorf("upsert stocks for market %s: %w", marketCode, err)
 	}
 
 	log.Printf("stock_service: synced %d stocks for market %s", len(stocks), marketCode)
@@ -148,7 +133,7 @@ func (s *StockService) SearchStocks(query string, marketCode string, limit int, 
 
 	if query != "" {
 		like := "%" + query + "%"
-		db = db.Where("symbol ILIKE ? OR name ILIKE ? OR name_cn ILIKE ?", like, like, like)
+		db = db.Where("stocks.symbol ILIKE ? OR stocks.name ILIKE ? OR stocks.name_cn ILIKE ?", like, like, like)
 	}
 
 	if marketCode != "" {

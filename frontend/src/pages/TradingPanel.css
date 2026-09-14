@@ -1,7 +1,9 @@
 /* ========== Trading Panel 金融终端风格 ========== */
 
 .trading-panel {
-  max-width: 1400px;
+  max-width: var(--content-max-width);
+  margin: 0 auto;
+  width: 100%;
 }
 
 .trading-panel-header {
@@ -317,10 +319,32 @@
   color: var(--text-primary);
 }
 
+.sim-trade-history-btn {
+  margin-right: var(--spacing-md);
+}
+
+/* 历史决策弹框 */
+.sim-trade-history-dates {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-lg);
+}
+
+.sim-trade-history-dates-label {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+.sim-trade-history-dates .ant-segmented {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
 /* 模拟账户资产 */
 .sim-trade-account {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: var(--spacing-md);
   background: var(--bg-base);
   border: 1px solid var(--border-color);
@@ -345,6 +369,12 @@
   font-weight: 700;
   font-family: 'Courier New', monospace;
   color: var(--text-primary);
+}
+
+.sim-trade-account-extra {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  font-family: 'Courier New', monospace;
 }
 
 /* 风险控制 */

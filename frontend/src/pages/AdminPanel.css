@@ -1,7 +1,9 @@
 /* ========== 管理后台布局 ========== */
 
 .admin-panel {
-  max-width: 100%;
+  max-width: var(--content-max-width);
+  margin: 0 auto;
+  width: 100%;
 }
 
 .admin-tabs {

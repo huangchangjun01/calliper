@@ -1,0 +1,226 @@
+.prediction-stats {
+  background: var(--bg-base);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-lg);
+  overflow: hidden;
+}
+
+.prediction-stats-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+  padding: var(--spacing-sm) var(--spacing-lg);
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-container);
+}
+
+.prediction-stats-header-left {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-md);
+  flex-wrap: wrap;
+}
+
+.prediction-stats-title {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.prediction-stats-range {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ========== 汇总指标条 ========== */
+.prediction-stats-summary {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 1px;
+  background: var(--border-color);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.prediction-stats-summary-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: var(--spacing-md) var(--spacing-sm);
+  background: var(--bg-container);
+}
+
+.prediction-stats-summary-label {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+}
+
+.prediction-stats-summary-value {
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.prediction-stats-summary-item--correct .prediction-stats-summary-value {
+  color: var(--color-success, #26a69a);
+}
+
+.prediction-stats-summary-item--wrong .prediction-stats-summary-value {
+  color: var(--color-error, #ef5350);
+}
+
+.prediction-stats-summary-item--pending .prediction-stats-summary-value {
+  color: var(--color-primary, #1677ff);
+}
+
+.prediction-stats-summary-item--accuracy .prediction-stats-summary-value {
+  color: var(--text-primary);
+}
+
+.prediction-stats-body {
+  padding: var(--spacing-sm);
+}
+
+.prediction-stats-footer {
+  padding: var(--spacing-xs) var(--spacing-lg) var(--spacing-sm);
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+}
+
+/* ========== 表格单元格 ========== */
+.prediction-stats-bucket {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.prediction-stats-bucket-primary {
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.prediction-stats-bucket-secondary {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+}
+
+.prediction-stats-total {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.prediction-stats-num {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 判定构成：三段堆叠条 */
+.prediction-stats-composition {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: stretch;
+}
+
+.prediction-stats-composition-bar {
+  display: flex;
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: var(--border-color);
+}
+
+.prediction-stats-composition-bar i {
+  display: block;
+  height: 100%;
+}
+
+.prediction-stats-composition-correct {
+  background: var(--color-success, #26a69a);
+}
+
+.prediction-stats-composition-wrong {
+  background: var(--color-error, #ef5350);
+}
+
+.prediction-stats-composition-pending {
+  background: var(--color-primary, #1677ff);
+}
+
+.prediction-stats-composition-detail {
+  display: flex;
+  gap: var(--spacing-md);
+  font-size: var(--font-size-xs);
+  font-style: normal;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.prediction-stats-composition-detail em {
+  font-style: normal;
+}
+
+.prediction-stats-composition-detail-correct {
+  color: var(--color-success, #26a69a);
+}
+
+.prediction-stats-composition-detail-wrong {
+  color: var(--color-error, #ef5350);
+}
+
+.prediction-stats-composition-detail-pending {
+  color: var(--color-primary, #1677ff);
+}
+
+/* 准确率：进度条 + 数值 */
+.prediction-stats-accuracy {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--spacing-sm);
+}
+
+.prediction-stats-accuracy-track {
+  flex: 1;
+  max-width: 110px;
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: var(--border-color);
+}
+
+.prediction-stats-accuracy-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #1677ff, #52c41a);
+  transition: width var(--transition-fast);
+}
+
+.prediction-stats-accuracy-value {
+  min-width: 52px;
+  text-align: right;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 准确率断点（该时段无已评估预测） */
+.prediction-stats-breakpoint {
+  color: var(--text-tertiary);
+  font-size: var(--font-size-xs);
+}
+
+/* 窄屏下汇总指标条降级为两列 */
+@media (max-width: 720px) {
+  .prediction-stats-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

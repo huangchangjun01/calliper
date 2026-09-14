@@ -114,8 +114,12 @@ export default function DataSourceConfig() {
       dataIndex: 'lastSyncTime',
       key: 'lastSyncTime',
       width: 180,
-      render: (time: string | null) =>
-        time ? dayjs(time).format('YYYY-MM-DD HH:mm:ss') : '-',
+      render: (time: string | null) => {
+        if (!time) return '-';
+        const d = dayjs(time);
+        if (!d.isValid() || d.year() < 2000) return '-';
+        return d.format('YYYY-MM-DD HH:mm');
+      },
     },
     {
       title: '启用',
@@ -169,6 +173,7 @@ export default function DataSourceConfig() {
         loading={isLoading}
         pagination={false}
         size="middle"
+        locale={{ emptyText: '暂无数据' }}
       />
 
       <Modal

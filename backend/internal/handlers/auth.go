@@ -1,7 +1,7 @@
 package handlers
 
 import (
-	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 
@@ -37,9 +37,9 @@ type LoginRequest struct {
 
 // LoginResponse represents a login response.
 type LoginResponse struct {
-	Token    string `json:"token"`
-	UserID   string `json:"user_id"`
-	Role     string `json:"role"`
+	Token  string `json:"token"`
+	UserID string `json:"user_id"`
+	Role   string `json:"role"`
 }
 
 // Login handles user login and returns a JWT token.
@@ -97,6 +97,21 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
+	// 显式长度校验，避免超长用户名/邮箱落到 DB（users.username varchar(50)、
+	// users.email varchar(100)）触发 DataTooLong/UniqueViolation 而返回 500。
+	if len(req.Username) < 2 || len(req.Username) > 50 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid username or password format"})
+		return
+	}
+	if len(req.Password) < 6 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid username or password format"})
+		return
+	}
+	if len(req.Email) > 100 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid email format"})
+		return
+	}
+
 	if h.DB == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "database unavailable"})
 		return
@@ -126,7 +141,8 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	}
 
 	if err := h.DB.Create(&user).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to create user: %v", err)})
+		log.Printf("[Auth] failed to create user: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create user"})
 		return
 	}
 

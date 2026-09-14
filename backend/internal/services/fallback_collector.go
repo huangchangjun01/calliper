@@ -8,8 +8,8 @@ import (
 // FallbackCollector implements MarketDataCollector with primary and fallback data sources.
 // When the primary source fails, it automatically falls back to the secondary source.
 type FallbackCollector struct {
-	primary   MarketDataCollector
-	fallback  MarketDataCollector
+	primary    MarketDataCollector
+	fallback   MarketDataCollector
 	marketCode string
 }
 

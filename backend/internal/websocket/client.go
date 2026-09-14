@@ -23,6 +23,14 @@ type Client struct {
 	subscriptions []string
 
 	mu sync.Mutex
+
+	// sendClosed tracks whether the send channel has been closed, so that
+	// Send never writes to a closed channel. Guarded by mu.
+	sendClosed bool
+
+	// closeOnce guarantees the send channel is closed exactly once,
+	// even when unregister/removal happen from multiple code paths.
+	closeOnce *sync.Once
 }
 
 // NewClient creates a new Client instance.
@@ -32,7 +40,47 @@ func NewClient(hub *Hub, conn *websocket.Conn) *Client {
 		conn:          conn,
 		send:          make(chan *Message, 256),
 		subscriptions: make([]string, 0),
+		closeOnce:     &sync.Once{},
 	}
+}
+
+// closeSend closes the outbound channel exactly once. It is safe to call
+// from multiple goroutines or repeatedly on the same client.
+func (c *Client) closeSend() {
+	c.closeOnce.Do(func() {
+		c.mu.Lock()
+		c.sendClosed = true
+		close(c.send)
+		c.mu.Unlock()
+	})
+}
+
+// Send attempts to enqueue a message for the WritePump to encode and write.
+// It never blocks and returns false if the send buffer is full or the channel
+// has been closed (in which case the message is dropped). This is the only
+// enqueue path that may race with closeSend; it is serialized via mu.
+func (c *Client) Send(msg *Message) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.sendClosed {
+		return false
+	}
+	select {
+	case c.send <- msg:
+		return true
+	default:
+		return false
+	}
+}
+
+// SnapshotSubscriptions returns a copy of the subscribed channels under the
+// client mutex, so callers can iterate without racing Subscribe/Unsubscribe.
+func (c *Client) SnapshotSubscriptions() []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	subs := make([]string, len(c.subscriptions))
+	copy(subs, c.subscriptions)
+	return subs
 }
 
 // ReadPump pumps messages from the WebSocket connection to the hub.

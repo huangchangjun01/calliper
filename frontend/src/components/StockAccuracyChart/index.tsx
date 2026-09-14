@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import ReactECharts from 'echarts-for-react';
 import type { EChartsOption } from 'echarts';
 import { Spin } from 'antd';
+import InfoTip from '@/components/common/InfoTip';
 import type { StockAccuracy } from '@/types';
 import './index.css';
 
@@ -27,9 +28,11 @@ export default function StockAccuracyChart({ data, loading }: StockAccuracyChart
         const p = params as Array<{ name: string; value: number }>;
         if (!p || p.length === 0) return '';
         const item = p[0];
+        const detail = data.find((s) => s.symbol === item.name);
         return `
           <div style="font-weight:600;margin-bottom:4px">${item.name}</div>
           <div>准确率: ${(item.value * 100).toFixed(1)}%</div>
+          <div>预测样本: ${detail?.total_predictions ?? '--'}</div>
         `;
       },
     },
@@ -42,7 +45,7 @@ export default function StockAccuracyChart({ data, loading }: StockAccuracyChart
     },
     xAxis: {
       type: 'category',
-      data: sortedData.map((s) => s.name),
+      data: sortedData.map((s) => s.symbol),
       axisLabel: {
         color: 'var(--text-tertiary)',
         fontSize: 11,
@@ -81,6 +84,7 @@ export default function StockAccuracyChart({ data, loading }: StockAccuracyChart
           },
         })),
         barWidth: '50%',
+        barMaxWidth: 60,
         emphasis: {
           itemStyle: {
             color: '#4096ff',
@@ -111,15 +115,21 @@ export default function StockAccuracyChart({ data, loading }: StockAccuracyChart
   return (
     <div className="stock-accuracy-chart">
       <div className="stock-accuracy-chart-header">
-        <span className="stock-accuracy-chart-title">各股票预测准确率排行</span>
+        <span className="stock-accuracy-chart-title">
+          <InfoTip tip="按个股统计的预测准确率排行；样本数标注可见性，样本过少仅供参考。">各股票预测准确率排行</InfoTip>
+        </span>
       </div>
       <div className="stock-accuracy-chart-body">
         <ReactECharts
           option={chartOption}
-          style={{ height: 300, width: '100%' }}
+          style={{ height: 240, width: '100%' }}
           notMerge
           lazyUpdate
-          opts={{ renderer: 'canvas' }}
+          opts={{
+            renderer: 'canvas',
+            // 固定至少 2x 渲染，避免缩放下出现图表模糊
+            devicePixelRatio: Math.max(2, Math.round(window.devicePixelRatio || 1)),
+          }}
         />
       </div>
     </div>

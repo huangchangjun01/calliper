@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Input, Radio, Button, Modal, message, Select, Spin } from 'antd';
 import { SearchOutlined } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
@@ -33,6 +33,7 @@ const ORDER_TYPE_OPTIONS = [
 
 export default function OrderForm({ isReal, onSubmit }: OrderFormProps) {
   const [symbol, setSymbol] = useState('');
+  const [searchInput, setSearchInput] = useState('');
   const [side, setSide] = useState<'buy' | 'sell'>('buy');
   const [orderType, setOrderType] = useState<'limit' | 'market'>('limit');
   const [price, setPrice] = useState<string>('');
@@ -52,14 +53,30 @@ export default function OrderForm({ isReal, onSubmit }: OrderFormProps) {
     staleTime: 60000,
   });
 
-  const handleSymbolSelect = useCallback((value: string) => {
-    const item = searchResults?.find((s) => s.symbol === value);
-    if (item) {
-      setSymbol(item.symbol);
-      setPrice(item.price.toFixed(2));
-    }
+  // 股票搜索防抖：输入 300ms 后再触发查询
+  useEffect(() => {
+    const t = setTimeout(() => setSymbol(searchInput), 300);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
+  const handleSymbolSelect = useCallback(async (value: string) => {
+    setSymbol(value);
+    setSearchInput(value);
     setSearchOpen(false);
-  }, [searchResults]);
+
+    // 选股后按 symbol 调行情接口回填实时价；取不到则留空由用户手输
+    try {
+      const data = await api.post<{ count: number; data: Record<string, unknown>[] }>(
+        '/market/realtime/batch',
+        { symbols: [value] }
+      );
+      const quote = data?.data?.[0];
+      const priceVal = quote?.price as number | undefined;
+      setPrice(priceVal && priceVal > 0 ? priceVal.toFixed(2) : '');
+    } catch {
+      setPrice('');
+    }
+  }, []);
 
   const validate = (): string | null => {
     if (!symbol.trim()) return '请输入股票代码';
@@ -70,6 +87,7 @@ export default function OrderForm({ isReal, onSubmit }: OrderFormProps) {
   };
 
   const handleSubmit = async () => {
+    if (submitting) return; // 防重复提交：请求进行中时忽略再次点击
     const error = validate();
     if (error) {
       message.warning(error);
@@ -91,6 +109,7 @@ export default function OrderForm({ isReal, onSubmit }: OrderFormProps) {
       okText: '确认提交',
       cancelText: '取消',
       onOk: async () => {
+        if (submitting) return;
         setSubmitting(true);
         try {
           const order: OrderRequestBody = {
@@ -120,6 +139,7 @@ export default function OrderForm({ isReal, onSubmit }: OrderFormProps) {
 
   const handleReset = () => {
     setSymbol('');
+    setSearchInput('');
     setPrice('');
     setQuantity('');
     setPassword('');
@@ -140,7 +160,7 @@ export default function OrderForm({ isReal, onSubmit }: OrderFormProps) {
           value={symbol || undefined}
           placeholder="输入股票代码或名称搜索"
           filterOption={false}
-          onSearch={(val) => { setSymbol(val); setSearchOpen(true); }}
+          onSearch={(val) => { setSearchInput(val); setSearchOpen(true); }}
           onSelect={handleSymbolSelect}
           onBlur={() => setTimeout(() => setSearchOpen(false), 200)}
           onFocus={() => { if (searchResults && searchResults.length > 0) setSearchOpen(true); }}
@@ -230,6 +250,7 @@ export default function OrderForm({ isReal, onSubmit }: OrderFormProps) {
           type="primary"
           block
           loading={submitting}
+          disabled={submitting}
           onClick={handleSubmit}
           danger={side === 'sell'}
         >

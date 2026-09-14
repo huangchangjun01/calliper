@@ -183,55 +183,102 @@ export interface PredictionSummary {
   flatCount: number;
 }
 
-/** 预测详情（展开行） */
+/** 预测状态 */
+export type PredictionStatus = 'pending' | 'correct' | 'wrong';
+
+/** 预测详情记录（对应 GET /api/v1/predictions/details） */
 export interface PredictionDetail {
   id: string;
   symbol: string;
   name: string;
-  short: { direction: PredictionDirection; confidence: number };
-  medium: { direction: PredictionDirection; confidence: number };
-  long: { direction: PredictionDirection; confidence: number };
-  targetPrice: number | null;
-  keyFactors: string[];
-  modelVersion: string;
-  updatedAt: string;
+  period: PredictionPeriod;
+  direction: PredictionDirection;
+  confidence: number;
+  target_price: number | null;
+  actual_price: number | null;
+  predicted_at: string;
+  valid_until: string;
+  expired: boolean;
+  status: PredictionStatus;
+  is_correct: boolean | null;
+  model_version: string;
+  key_factors: string[];
 }
 
-/** 准确率数据点 */
-export interface AccuracyDataPoint {
+/** 预测列表筛选条件 */
+export interface PredictionFilters {
+  period?: PredictionPeriod;
+  direction?: PredictionDirection;
+  confidenceMin?: number;
+  expired?: boolean;
+  status?: PredictionStatus;
+}
+
+/** 预测历史记录（GET /api/v1/predictions/history） */
+export interface PredictionHistoryItem {
+  id: number;
+  symbol: string;
+  name: string;
+  period: string;
+  direction: PredictionDirection;
+  confidence: number;
+  target_price: number;
+  actual_price: number | null;
+  predicted_at: string;
+  valid_until: string;
+  status: PredictionStatus;
+}
+
+/** 分时段预测统计（GET /api/v1/predictions/stats），accuracy 为 null 表示该时段无已评估预测（断点） */
+export interface PredictionStat {
+  bucket: string;
+  total: number;
+  correct: number;
+  wrong: number;
+  pending: number;
+  accuracy: number | null;
+}
+
+/** 预测历史分页响应（GET /api/v1/predictions/history） */
+export type HistoryResponse = PaginatedItems<PredictionHistoryItem>;
+
+/** 生成预测响应（POST /api/v1/predictions/generate） */
+export interface GenerateResponse {
+  status: string;
+  results: {
+    symbol: string;
+    status: 'predicted' | 'no_data';
+    count: number;
+  }[];
+  persisted: number;
+}
+
+/** 准确率趋势点（GET /api/v1/predictions/accuracy），accuracy 为 null 表示无数据日（断点） */
+export interface AccuracyTrendPoint {
   date: string;
-  accuracy: number;
-  totalPredictions: number;
-  correctPredictions: number;
+  accuracy: number | null;
 }
 
 /** 准确率趋势 */
-export interface AccuracyTrend {
-  period: PredictionPeriod;
-  periodLabel: string;
-  data: AccuracyDataPoint[];
-}
+export type AccuracyTrend = AccuracyTrendPoint[];
 
-/** 股票准确率排行 */
+/** 各股票准确率（GET /api/v1/predictions/stock-accuracy） */
 export interface StockAccuracy {
   symbol: string;
-  name: string;
   accuracy: number;
-  totalPredictions: number;
-  correctPredictions: number;
+  total_predictions: number;
 }
 
-/** 预测失败案例 */
+/** 预测失败案例（GET /api/v1/predictions/failures） */
 export interface FailureCase {
   id: string;
   symbol: string;
   name: string;
-  predictedDirection: PredictionDirection;
-  actualDirection: PredictionDirection;
-  predictedPrice: number;
-  actualPrice: number;
-  date: string;
-  reasons: string[];
+  predicted_direction: PredictionDirection;
+  actual_direction: PredictionDirection;
+  period: PredictionPeriod;
+  predicted_at: string;
+  summary: string;
 }
 
 // ========== 用户相关类型 ==========
@@ -269,6 +316,76 @@ export interface PaginatedData<T> {
 }
 
 export interface PaginatedResponse<T> extends ApiResponse<PaginatedData<T>> {}
+
+/** 分页数据包装（offset/limit/total 形式，后端通用） */
+export interface PaginatedItems<T> {
+  items: T[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+// ========== Dashboard 决策支持相关类型 ==========
+
+/** 数据源降级（不可用）标识 */
+export interface UnavailableSection {
+  status: 'unavailable';
+}
+
+/** 高置信度标的 */
+export interface HighConfidenceItem {
+  symbol: string;
+  name: string;
+  period: PredictionPeriod;
+  direction: PredictionDirection;
+  confidence: number;
+  target_price: number | null;
+}
+
+/** 预测准确率摘要 */
+export interface AccuracySummary {
+  accuracy_7d: number | null;
+  accuracy_30d: number | null;
+  accuracy_total: number | null;
+  total_evaluated: number | null;
+}
+
+/** 风险提示 */
+export interface RiskAlert {
+  symbol?: string;
+  name?: string;
+  level?: string;
+  type?: string;
+  message?: string;
+  content?: string;
+}
+
+/** 模型健康状态 */
+export interface ModelHealth {
+  suspend: boolean;
+  reason: string | null;
+  consecutive_below_threshold: number;
+}
+
+/** 系统状态 */
+export interface SystemStatus {
+  last_sync: string | null;
+  model_health: ModelHealth;
+  thresholds: {
+    suspend_threshold: number;
+    retrain_threshold: number;
+    high_confidence_threshold: number;
+  };
+  degraded: boolean;
+}
+
+/** Dashboard 数据（各区块可能降级为 unavailable） */
+export interface DashboardData {
+  high_confidence: HighConfidenceItem[] | UnavailableSection;
+  accuracy_summary: AccuracySummary | UnavailableSection;
+  risk_alerts: RiskAlert[] | UnavailableSection;
+  system_status: SystemStatus | UnavailableSection;
+}
 
 // ========== WebSocket 消息类型 ==========
 

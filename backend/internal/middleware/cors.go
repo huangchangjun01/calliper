@@ -11,16 +11,14 @@ func CORSMiddleware(allowedOrigins []string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		origin := c.Request.Header.Get("Origin")
 
-		// Check if the origin is allowed
+		// Only exact origins from the whitelist are allowed. A wildcard "*"
+		// is never accepted so that credentialed (cookie) requests are
+		// never echoed globally.
 		allowOrigin := ""
-		if len(allowedOrigins) == 0 {
-			allowOrigin = "*"
-		} else {
-			for _, o := range allowedOrigins {
-				if o == "*" || o == origin {
-					allowOrigin = origin
-					break
-				}
+		for _, o := range allowedOrigins {
+			if o == origin {
+				allowOrigin = origin
+				break
 			}
 		}
 

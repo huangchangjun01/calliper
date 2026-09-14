@@ -8,94 +8,94 @@ import (
 
 // Market represents a stock exchange market.
 type Market struct {
-	ID            uint           `gorm:"primaryKey" json:"id"`
-	Code          string         `gorm:"type:varchar(20);uniqueIndex;not null" json:"code"`
-	Name          string         `gorm:"type:varchar(100);not null" json:"name"`
-	NameCN        string         `gorm:"type:varchar(100)" json:"name_cn"`
-	Country       string         `gorm:"type:varchar(50);not null" json:"country"`
-	Currency      string         `gorm:"type:varchar(10);not null" json:"currency"`
-	Timezone      string         `gorm:"type:varchar(50);not null" json:"timezone"`
-	TradingHours  string         `gorm:"type:text" json:"trading_hours"`
-	Status        string         `gorm:"type:varchar(20);default:active;not null" json:"status"`
-	CreatedAt     time.Time      `json:"created_at"`
-	UpdatedAt     time.Time      `json:"updated_at"`
-	Stocks        []Stock        `gorm:"foreignKey:MarketID" json:"stocks,omitempty"`
+	ID           uint      `gorm:"primaryKey" json:"id"`
+	Code         string    `gorm:"type:varchar(20);uniqueIndex;not null" json:"code"`
+	Name         string    `gorm:"type:varchar(100);not null" json:"name"`
+	NameCN       string    `gorm:"type:varchar(100)" json:"name_cn"`
+	Country      string    `gorm:"type:varchar(50);not null" json:"country"`
+	Currency     string    `gorm:"type:varchar(10);not null" json:"currency"`
+	Timezone     string    `gorm:"type:varchar(50);not null" json:"timezone"`
+	TradingHours string    `gorm:"type:text" json:"trading_hours"`
+	Status       string    `gorm:"type:varchar(20);default:active;not null" json:"status"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+	Stocks       []Stock   `gorm:"foreignKey:MarketID" json:"stocks,omitempty"`
 }
 
 // Stock represents a tradable stock.
 type Stock struct {
-	ID           uint           `gorm:"primaryKey" json:"id"`
-	Symbol       string         `gorm:"type:varchar(20);not null;index" json:"symbol"`
-	Name         string         `gorm:"type:varchar(200);not null" json:"name"`
-	NameCN       string         `gorm:"type:varchar(200)" json:"name_cn"`
-	MarketID     uint           `gorm:"not null;index" json:"market_id"`
-	Exchange     string         `gorm:"type:varchar(50)" json:"exchange"`
-	Industry     string         `gorm:"type:varchar(100)" json:"industry"`
-	Sector       string         `gorm:"type:varchar(100)" json:"sector"`
-	MarketCap    float64        `gorm:"type:decimal(20,2)" json:"market_cap"`
-	Currency     string         `gorm:"type:varchar(10);default:CNY" json:"currency"`
-	LotSize      int            `gorm:"default:100" json:"lot_size"`
-	IsActive     bool           `gorm:"default:true" json:"is_active"`
-	CreatedAt    time.Time      `json:"created_at"`
-	UpdatedAt    time.Time      `json:"updated_at"`
-	Market       Market         `gorm:"foreignKey:MarketID" json:"market,omitempty"`
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	Symbol    string    `gorm:"type:varchar(20);not null;uniqueIndex" json:"symbol"`
+	Name      string    `gorm:"type:varchar(200);not null" json:"name"`
+	NameCN    string    `gorm:"type:varchar(200)" json:"name_cn"`
+	MarketID  uint      `gorm:"not null;index" json:"market_id"`
+	Exchange  string    `gorm:"type:varchar(50)" json:"exchange"`
+	Industry  string    `gorm:"type:varchar(100)" json:"industry"`
+	Sector    string    `gorm:"type:varchar(100)" json:"sector"`
+	MarketCap float64   `gorm:"type:decimal(20,2)" json:"market_cap"`
+	Currency  string    `gorm:"type:varchar(10);default:CNY" json:"currency"`
+	LotSize   int       `gorm:"default:100" json:"lot_size"`
+	IsActive  bool      `gorm:"default:true" json:"is_active"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Market    Market    `gorm:"foreignKey:MarketID" json:"market,omitempty"`
 }
 
 // User represents a system user.
 type User struct {
-	ID           uint           `gorm:"primaryKey" json:"id"`
-	Username     string         `gorm:"type:varchar(50);uniqueIndex;not null" json:"username"`
-	Email        string         `gorm:"type:varchar(100);uniqueIndex;not null" json:"email"`
-	PasswordHash string         `gorm:"type:varchar(255);not null" json:"-"`
-	Role         string         `gorm:"type:varchar(20);default:user;not null" json:"role"`
-	IsActive     bool           `gorm:"default:true" json:"is_active"`
-	CreatedAt    time.Time      `json:"created_at"`
-	UpdatedAt    time.Time      `json:"updated_at"`
+	ID           uint      `gorm:"primaryKey" json:"id"`
+	Username     string    `gorm:"type:varchar(50);uniqueIndex;not null" json:"username"`
+	Email        string    `gorm:"type:varchar(100);uniqueIndex;not null" json:"email"`
+	PasswordHash string    `gorm:"type:varchar(255);not null" json:"-"`
+	Role         string    `gorm:"type:varchar(20);default:user;not null" json:"role"`
+	IsActive     bool      `gorm:"default:true" json:"is_active"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 // Watchlist represents a user's watchlist entry.
 type Watchlist struct {
-	ID        uint      `gorm:"primaryKey" json:"id"`
-	UserID    uint      `gorm:"not null;uniqueIndex:idx_user_stock" json:"user_id"`
-	StockID   uint      `gorm:"not null;uniqueIndex:idx_user_stock" json:"stock_id"`
-	AddedAt   time.Time `gorm:"autoCreateTime" json:"added_at"`
-	User      User      `gorm:"foreignKey:UserID" json:"-"`
-	Stock     Stock     `gorm:"foreignKey:StockID" json:"stock,omitempty"`
+	ID      uint      `gorm:"primaryKey" json:"id"`
+	UserID  uint      `gorm:"not null;uniqueIndex:idx_user_stock" json:"user_id"`
+	StockID uint      `gorm:"not null;uniqueIndex:idx_user_stock" json:"stock_id"`
+	AddedAt time.Time `gorm:"autoCreateTime" json:"added_at"`
+	User    User      `gorm:"foreignKey:UserID" json:"-"`
+	Stock   Stock     `gorm:"foreignKey:StockID" json:"stock,omitempty"`
 }
 
 // Order represents a trading order.
 type Order struct {
-	ID            uint           `gorm:"primaryKey" json:"id"`
-	UserID        uint           `gorm:"not null;index" json:"user_id"`
-	StockID       uint           `gorm:"not null;index" json:"stock_id"`
-	OrderType     string         `gorm:"type:varchar(10);not null" json:"order_type"`
-	OrderKind     string         `gorm:"type:varchar(10);not null" json:"order_kind"`
-	Price         float64        `gorm:"type:decimal(18,4)" json:"price"`
-	Quantity      int            `gorm:"not null" json:"quantity"`
-	FilledQuantity int           `gorm:"default:0" json:"filled_quantity"`
-	Status        string         `gorm:"type:varchar(20);default:pending;not null" json:"status"`
-	IsReal        bool           `gorm:"default:false" json:"is_real"`
-	CreatedAt     time.Time      `json:"created_at"`
-	UpdatedAt     time.Time      `json:"updated_at"`
-	User          User           `gorm:"foreignKey:UserID" json:"-"`
-	Stock         Stock          `gorm:"foreignKey:StockID" json:"stock,omitempty"`
-}
-
-// Position represents a user's holding position.
-type Position struct {
 	ID             uint      `gorm:"primaryKey" json:"id"`
-	UserID         uint      `gorm:"not null;uniqueIndex:idx_user_stock_position" json:"user_id"`
-	StockID        uint      `gorm:"not null;uniqueIndex:idx_user_stock_position" json:"stock_id"`
-	Quantity       int       `gorm:"not null;default:0" json:"quantity"`
-	AvgCost        float64   `gorm:"type:decimal(18,4)" json:"avg_cost"`
-	CurrentValue   float64   `gorm:"type:decimal(20,2)" json:"current_value"`
-	UnrealizedPnL  float64   `gorm:"type:decimal(20,2)" json:"unrealized_pnl"`
-	RealizedPnL    float64   `gorm:"type:decimal(20,2)" json:"realized_pnl"`
+	UserID         uint      `gorm:"not null;index" json:"user_id"`
+	StockID        uint      `gorm:"not null;index" json:"stock_id"`
+	OrderType      string    `gorm:"type:varchar(10);not null" json:"order_type"`
+	OrderKind      string    `gorm:"type:varchar(10);not null" json:"order_kind"`
+	Price          float64   `gorm:"type:decimal(18,4)" json:"price"`
+	Quantity       int       `gorm:"not null" json:"quantity"`
+	FilledQuantity int       `gorm:"default:0" json:"filled_quantity"`
+	Status         string    `gorm:"type:varchar(20);default:pending;not null" json:"status"`
 	IsReal         bool      `gorm:"default:false" json:"is_real"`
 	CreatedAt      time.Time `json:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at"`
 	User           User      `gorm:"foreignKey:UserID" json:"-"`
 	Stock          Stock     `gorm:"foreignKey:StockID" json:"stock,omitempty"`
+}
+
+// Position represents a user's holding position.
+type Position struct {
+	ID            uint      `gorm:"primaryKey" json:"id"`
+	UserID        uint      `gorm:"not null;uniqueIndex:idx_user_stock_position" json:"user_id"`
+	StockID       uint      `gorm:"not null;uniqueIndex:idx_user_stock_position" json:"stock_id"`
+	Quantity      int       `gorm:"not null;default:0" json:"quantity"`
+	AvgCost       float64   `gorm:"type:decimal(18,4)" json:"avg_cost"`
+	CurrentValue  float64   `gorm:"type:decimal(20,2)" json:"current_value"`
+	UnrealizedPnL float64   `gorm:"type:decimal(20,2)" json:"unrealized_pnl"`
+	RealizedPnL   float64   `gorm:"type:decimal(20,2)" json:"realized_pnl"`
+	IsReal        bool      `gorm:"default:false" json:"is_real"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
+	User          User      `gorm:"foreignKey:UserID" json:"-"`
+	Stock         Stock     `gorm:"foreignKey:StockID" json:"stock,omitempty"`
 }
 
 // SimulatedTrade represents a simulated/paper trade record.
@@ -108,24 +108,26 @@ type SimulatedTrade struct {
 	Confidence   float64   `gorm:"type:decimal(5,2)" json:"confidence"`
 	PredictionID *uint     `json:"prediction_id"`
 	Reason       string    `gorm:"type:text" json:"reason"`
+	Profit       float64   `gorm:"type:decimal(20,2);default:0" json:"profit"`
+	ProfitRate   float64   `gorm:"type:decimal(10,4);default:0" json:"profit_rate"`
 	ExecutedAt   time.Time `gorm:"not null" json:"executed_at"`
 	Stock        Stock     `gorm:"foreignKey:StockID" json:"stock,omitempty"`
 }
 
 // Prediction represents an AI/ML prediction for a stock.
 type Prediction struct {
-	ID          uint           `gorm:"primaryKey" json:"id"`
-	StockID     uint           `gorm:"not null;index" json:"stock_id"`
-	Period      string         `gorm:"type:varchar(20);not null" json:"period"`
-	Direction   string         `gorm:"type:varchar(10);not null" json:"direction"`
-	Confidence  float64        `gorm:"type:decimal(5,2)" json:"confidence"`
-	TargetPrice float64        `gorm:"type:decimal(18,4)" json:"target_price"`
-	Factors     datatypes.JSON `gorm:"type:jsonb" json:"factors"`
-	ModelVersion string        `gorm:"type:varchar(50)" json:"model_version"`
-	PredictedAt time.Time      `gorm:"not null;index" json:"predicted_at"`
-	ValidUntil  time.Time      `json:"valid_until"`
-	Success     *bool          `gorm:"type:boolean" json:"success,omitempty"`
-	Stock       Stock          `gorm:"foreignKey:StockID" json:"stock,omitempty"`
+	ID           uint           `gorm:"primaryKey" json:"id"`
+	StockID      uint           `gorm:"not null;index" json:"stock_id"`
+	Period       string         `gorm:"type:varchar(20);not null" json:"period"`
+	Direction    string         `gorm:"type:varchar(10);not null" json:"direction"`
+	Confidence   float64        `gorm:"type:decimal(5,2)" json:"confidence"`
+	TargetPrice  float64        `gorm:"type:decimal(18,4)" json:"target_price"`
+	Factors      datatypes.JSON `gorm:"type:jsonb" json:"factors"`
+	ModelVersion string         `gorm:"type:varchar(50)" json:"model_version"`
+	PredictedAt  time.Time      `gorm:"not null;index" json:"predicted_at"`
+	ValidUntil   time.Time      `json:"valid_until"`
+	Success      *bool          `gorm:"type:boolean" json:"success,omitempty"`
+	Stock        Stock          `gorm:"foreignKey:StockID" json:"stock,omitempty"`
 }
 
 // PredictionAccuracy tracks the accuracy of predictions.
@@ -164,18 +166,19 @@ type AuditLog struct {
 
 // SimAccount represents a simulated trading account.
 type SimAccount struct {
-	ID            uint      `gorm:"primaryKey" json:"id"`
-	TotalAssets   float64   `gorm:"type:decimal(20,2);not null" json:"total_assets"`
-	AvailableCash float64   `gorm:"type:decimal(20,2);not null" json:"available_cash"`
-	FrozenCash    float64   `gorm:"type:decimal(20,2);default:0" json:"frozen_cash"`
-	MarketValue   float64   `gorm:"type:decimal(20,2);default:0" json:"market_value"`
-	TotalPnL      float64   `gorm:"type:decimal(20,2);default:0" json:"total_pnl"`
-	TodayPnL      float64   `gorm:"type:decimal(20,2);default:0" json:"today_pnl"`
-	TodayReturn   float64   `gorm:"type:decimal(10,4);default:0" json:"today_return"`
-	StartDate     string    `gorm:"type:varchar(10);not null" json:"start_date"`
-	IsRunning     bool      `gorm:"default:false" json:"is_running"`
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	ID             uint      `gorm:"primaryKey" json:"id"`
+	TotalAssets    float64   `gorm:"type:decimal(20,2);not null" json:"total_assets"`
+	InitialCapital float64   `gorm:"type:decimal(20,2);default:1000000" json:"initial_capital"`
+	AvailableCash  float64   `gorm:"type:decimal(20,2);not null" json:"available_cash"`
+	FrozenCash     float64   `gorm:"type:decimal(20,2);default:0" json:"frozen_cash"`
+	MarketValue    float64   `gorm:"type:decimal(20,2);default:0" json:"market_value"`
+	TotalPnL       float64   `gorm:"type:decimal(20,2);default:0" json:"total_pnl"`
+	TodayPnL       float64   `gorm:"type:decimal(20,2);default:0" json:"today_pnl"`
+	TodayReturn    float64   `gorm:"type:decimal(10,4);default:0" json:"today_return"`
+	StartDate      string    `gorm:"type:varchar(10);not null" json:"start_date"`
+	IsRunning      bool      `gorm:"default:false" json:"is_running"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 // RiskEvent records a risk control event triggered during simulated trading.
@@ -187,14 +190,30 @@ type RiskEvent struct {
 	CreatedAt time.Time `gorm:"autoCreateTime;index" json:"created_at"`
 }
 
+// ModelTrainingLog records a model training run attempt.
+type ModelTrainingLog struct {
+	ID           uint       `gorm:"primaryKey" json:"id"`
+	Period       string     `gorm:"type:varchar(20)" json:"period"`
+	Version      string     `gorm:"type:varchar(50)" json:"version"`
+	Accuracy     float64    `gorm:"type:decimal(10,4)" json:"accuracy"`
+	SampleCount  int        `json:"sample_count"`
+	TriggerType  string     `gorm:"type:varchar(20)" json:"trigger_type"`
+	Status       string     `gorm:"type:varchar(20)" json:"status"`
+	StartedAt    time.Time  `json:"started_at"`
+	FinishedAt   *time.Time `json:"finished_at"`
+	DurationSec  int        `json:"duration_sec"`
+	ErrorMessage string     `gorm:"type:text" json:"error_message"`
+	CreatedAt    time.Time  `json:"created_at"`
+}
+
 // ──────────────────────────────────────────────────────────────
 // TimescaleDB hypertable models (time-series price data)
 // ──────────────────────────────────────────────────────────────
 
 // StockPriceMinute represents 1-minute aggregate stock price data.
 type StockPriceMinute struct {
-	Time    time.Time `gorm:"not null" json:"time"`
-	StockID uint      `gorm:"not null;uniqueIndex:idx_minute_stock_time" json:"stock_id"`
+	Time    time.Time `gorm:"not null;uniqueIndex:idx_minute_stock_time,priority:1" json:"time"`
+	StockID uint      `gorm:"not null;uniqueIndex:idx_minute_stock_time,priority:2" json:"stock_id"`
 	Open    float64   `gorm:"type:decimal(18,4)" json:"open"`
 	High    float64   `gorm:"type:decimal(18,4)" json:"high"`
 	Low     float64   `gorm:"type:decimal(18,4)" json:"low"`
@@ -205,25 +224,25 @@ type StockPriceMinute struct {
 
 // StockPriceDaily represents daily aggregate stock price data.
 type StockPriceDaily struct {
-	Time            time.Time `gorm:"not null" json:"time"`
-	StockID         uint      `gorm:"not null;uniqueIndex:idx_daily_stock_time" json:"stock_id"`
-	Open            float64   `gorm:"type:decimal(18,4)" json:"open"`
-	High            float64   `gorm:"type:decimal(18,4)" json:"high"`
-	Low             float64   `gorm:"type:decimal(18,4)" json:"low"`
-	Close           float64   `gorm:"type:decimal(18,4)" json:"close"`
-	Volume          int64     `json:"volume"`
-	Amount          float64   `gorm:"type:decimal(20,2)" json:"amount"`
-	TurnoverRate    float64   `gorm:"type:decimal(10,4)" json:"turnover_rate"`
-	PERatio         float64   `gorm:"type:decimal(10,2)" json:"pe_ratio"`
-	PBRatio         float64   `gorm:"type:decimal(10,2)" json:"pb_ratio"`
-	TotalMarketCap  float64   `gorm:"type:decimal(20,2)" json:"total_market_cap"`
-	FloatMarketCap  float64   `gorm:"type:decimal(20,2)" json:"float_market_cap"`
+	Time           time.Time `gorm:"not null;uniqueIndex:idx_daily_time_stock,priority:2" json:"time"`
+	StockID        uint      `gorm:"not null;uniqueIndex:idx_daily_time_stock,priority:1" json:"stock_id"`
+	Open           float64   `gorm:"type:decimal(18,4)" json:"open"`
+	High           float64   `gorm:"type:decimal(18,4)" json:"high"`
+	Low            float64   `gorm:"type:decimal(18,4)" json:"low"`
+	Close          float64   `gorm:"type:decimal(18,4)" json:"close"`
+	Volume         int64     `json:"volume"`
+	Amount         float64   `gorm:"type:decimal(20,2)" json:"amount"`
+	TurnoverRate   float64   `gorm:"type:decimal(10,4)" json:"turnover_rate"`
+	PERatio        float64   `gorm:"type:decimal(10,2)" json:"pe_ratio"`
+	PBRatio        float64   `gorm:"type:decimal(10,2)" json:"pb_ratio"`
+	TotalMarketCap float64   `gorm:"type:decimal(20,2)" json:"total_market_cap"`
+	FloatMarketCap float64   `gorm:"type:decimal(20,2)" json:"float_market_cap"`
 }
 
 // StockPriceTick represents tick-level stock trade data.
 type StockPriceTick struct {
-	Time      time.Time `gorm:"not null" json:"time"`
-	StockID   uint      `gorm:"not null;index:idx_tick_stock_time" json:"stock_id"`
+	Time      time.Time `gorm:"not null;uniqueIndex:idx_tick_stock_time,priority:2,sort:desc" json:"time"`
+	StockID   uint      `gorm:"not null;uniqueIndex:idx_tick_stock_time,priority:1" json:"stock_id"`
 	Price     float64   `gorm:"type:decimal(18,4);not null" json:"price"`
 	Volume    int64     `json:"volume"`
 	Direction string    `gorm:"type:varchar(10)" json:"direction"`
@@ -241,11 +260,12 @@ func (Order) TableName() string              { return "orders" }
 func (Position) TableName() string           { return "positions" }
 func (SimulatedTrade) TableName() string     { return "simulated_trades" }
 func (Prediction) TableName() string         { return "predictions" }
-func (PredictionAccuracy) TableName() string  { return "prediction_accuracies" }
+func (PredictionAccuracy) TableName() string { return "prediction_accuracies" }
 func (SystemConfig) TableName() string       { return "system_configs" }
 func (AuditLog) TableName() string           { return "audit_logs" }
-func (SimAccount) TableName() string          { return "sim_accounts" }
-func (RiskEvent) TableName() string           { return "risk_events" }
+func (SimAccount) TableName() string         { return "sim_accounts" }
+func (RiskEvent) TableName() string          { return "risk_events" }
+func (ModelTrainingLog) TableName() string   { return "model_training_logs" }
 func (StockPriceMinute) TableName() string   { return "stock_prices_1min" }
 func (StockPriceDaily) TableName() string    { return "stock_prices_daily" }
 func (StockPriceTick) TableName() string     { return "stock_prices_tick" }

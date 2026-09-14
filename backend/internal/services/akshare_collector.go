@@ -44,6 +44,7 @@ func (c *AKShareCollector) GetMarketCode() string {
 func (c *AKShareCollector) sinaSymbol(symbol string) string {
 	switch c.marketCode {
 	case "CN":
+		symbol = normalizeSymbol(symbol)
 		upper := strings.ToUpper(symbol)
 		if strings.HasPrefix(upper, "6") || strings.HasPrefix(upper, "9") {
 			return "sh" + symbol

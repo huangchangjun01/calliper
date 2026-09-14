@@ -37,6 +37,7 @@ func (c *TencentCollector) GetMarketCode() string {
 // tencentSymbol converts internal symbol to Tencent Finance format.
 // CN: "600519" -> "sh600519", "000001" -> "sz000001"
 func (c *TencentCollector) tencentSymbol(symbol string) string {
+	symbol = normalizeSymbol(symbol)
 	upper := strings.ToUpper(symbol)
 	if strings.HasPrefix(upper, "6") || strings.HasPrefix(upper, "9") {
 		return "sh" + symbol
@@ -135,13 +136,13 @@ func (c *TencentCollector) parseLine(parts []string, symbol string, now time.Tim
 	low := parseFloatSafe(parts[34])
 	change := parseFloatSafe(parts[31])
 	changePercent := parseFloatSafe(parts[32])
-	volume := parseInt64Safe(parts[6]) // 手
+	volume := parseInt64Safe(parts[6])          // 手
 	amount := parseFloatSafe(parts[37]) * 10000 // 万元 → 元
 	turnoverRate := parseFloatSafe(parts[38])
 	pe := parseFloatSafe(parts[39])
 	pb := parseFloatSafe(parts[46])
 	totalMarketCap := parseFloatSafe(parts[45]) * 1e8 // 亿元 → 元
-	floatMarketCap := parseFloatSafe(parts[44]) * 1e8  // 亿元 → 元
+	floatMarketCap := parseFloatSafe(parts[44]) * 1e8 // 亿元 → 元
 
 	// If price fields are zero, compute from other fields
 	if price == 0 && prevClose != 0 && change != 0 {
@@ -175,6 +176,7 @@ func (c *TencentCollector) parseLine(parts []string, symbol string, now time.Tim
 
 // sinaSymbol converts internal symbol to Sina Finance format.
 func (c *TencentCollector) sinaSymbol(symbol string) string {
+	symbol = normalizeSymbol(symbol)
 	upper := strings.ToUpper(symbol)
 	if strings.HasPrefix(upper, "6") || strings.HasPrefix(upper, "9") {
 		return "sh" + symbol
@@ -284,4 +286,3 @@ func (c *TencentCollector) FetchHistoricalData(symbol string, start, end time.Ti
 	log.Printf("[Tencent->Sina] Fetched %d historical K-line records for %s", len(result), symbol)
 	return result, nil
 }
-

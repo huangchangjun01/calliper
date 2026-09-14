@@ -3,8 +3,6 @@ package websocket
 import (
 	"sync"
 	"time"
-
-	"github.com/gorilla/websocket"
 )
 
 const (
@@ -57,14 +55,11 @@ func NewHub() *Hub {
 
 // Run starts the Hub's main loop.
 func (h *Hub) Run() {
-	ticker := time.NewTicker(pingPeriod)
-	defer ticker.Stop()
-
 	for {
 		select {
 		case client := <-h.register:
 			h.mu.Lock()
-			for _, channel := range client.subscriptions {
+			for _, channel := range client.SnapshotSubscriptions() {
 				if h.channels[channel] == nil {
 					h.channels[channel] = make(map[*Client]bool)
 				}
@@ -74,11 +69,10 @@ func (h *Hub) Run() {
 
 		case client := <-h.unregister:
 			h.mu.Lock()
-			for _, channel := range client.subscriptions {
+			for _, channel := range client.SnapshotSubscriptions() {
 				if clients, ok := h.channels[channel]; ok {
 					if _, ok := clients[client]; ok {
 						delete(clients, client)
-						close(client.send)
 						// Clean up empty channels
 						if len(clients) == 0 {
 							delete(h.channels, channel)
@@ -86,6 +80,7 @@ func (h *Hub) Run() {
 					}
 				}
 			}
+			client.closeSend()
 			h.mu.Unlock()
 
 		case message := <-h.Broadcast:
@@ -96,22 +91,6 @@ func (h *Hub) Run() {
 					case client.send <- message:
 					default:
 						// Client send buffer is full, remove it
-						h.mu.RUnlock()
-						h.mu.Lock()
-						h.removeClient(client)
-						h.mu.Unlock()
-						h.mu.RLock()
-					}
-				}
-			}
-			h.mu.RUnlock()
-
-		case <-ticker.C:
-			h.mu.RLock()
-			for _, clients := range h.channels {
-				for client := range clients {
-					client.conn.SetWriteDeadline(time.Now().Add(writeWait))
-					if err := client.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 						h.mu.RUnlock()
 						h.mu.Lock()
 						h.removeClient(client)
@@ -178,7 +157,7 @@ func (h *Hub) Unsubscribe(client *Client, channel string) {
 }
 
 func (h *Hub) removeClient(client *Client) {
-	for _, channel := range client.subscriptions {
+	for _, channel := range client.SnapshotSubscriptions() {
 		if clients, ok := h.channels[channel]; ok {
 			if _, ok := clients[client]; ok {
 				delete(clients, client)
@@ -188,5 +167,5 @@ func (h *Hub) removeClient(client *Client) {
 			}
 		}
 	}
-	close(client.send)
+	client.closeSend()
 }

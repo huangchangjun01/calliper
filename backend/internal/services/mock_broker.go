@@ -3,6 +3,7 @@ package services
 import (
 	"fmt"
 	"math/rand"
+	"sync"
 	"time"
 
 	"github.com/quant-trading/backend/internal/models"
@@ -12,15 +13,20 @@ import (
 
 // MockBroker is a simulated broker adapter that uses real market data for pricing.
 type MockBroker struct {
-	db    *gorm.DB
-	rng   *rand.Rand
+	db   *gorm.DB
+	tsdb *gorm.DB
+	mu   sync.Mutex // guards rng
+	rng  *rand.Rand
 }
 
 // NewMockBroker creates a new MockBroker with a database connection for real prices.
-func NewMockBroker(db *gorm.DB) *MockBroker {
+// tsdb is the TimescaleDB connection holding stock_prices_daily; it may be nil,
+// in which case real-price lookups fall back to returning 0.
+func NewMockBroker(db *gorm.DB, tsdb *gorm.DB) *MockBroker {
 	return &MockBroker{
-		db:  db,
-		rng: rand.New(rand.NewSource(time.Now().UnixNano())),
+		db:   db,
+		tsdb: tsdb,
+		rng:  rand.New(rand.NewSource(time.Now().UnixNano())),
 	}
 }
 
@@ -31,7 +37,7 @@ func (m *MockBroker) GetBrokerName() string {
 
 // PlaceOrder simulates placing an order using real market prices from the database.
 func (m *MockBroker) PlaceOrder(req PlaceOrderRequest) (*PlaceOrderResponse, error) {
-	orderID := fmt.Sprintf("MOCK-%d-%d", time.Now().UnixNano(), m.rng.Intn(10000))
+	orderID := fmt.Sprintf("MOCK-%d-%d", time.Now().UnixNano(), m.randIntn(10000))
 
 	var fillPrice decimal.Decimal
 	if req.OrderType == "market" || req.Price.IsZero() {
@@ -44,7 +50,7 @@ func (m *MockBroker) PlaceOrder(req PlaceOrderRequest) (*PlaceOrderResponse, err
 		}
 	} else {
 		// Limit order: use the specified price with slight slippage
-		slippage := decimal.NewFromFloat((m.rng.Float64() - 0.5) * 0.002)
+		slippage := decimal.NewFromFloat((m.randFloat64() - 0.5) * 0.002)
 		fillPrice = req.Price.Add(req.Price.Mul(slippage))
 	}
 
@@ -174,24 +180,44 @@ func (m *MockBroker) QueryAccount() (*AccountInfo, error) {
 	}, nil
 }
 
-// getRealPrice looks up the latest price for a stock symbol from the database.
-// Returns 0 if the price cannot be determined.
+// randIntn returns a random int in [0,n) guarded by the mutex.
+// rand.Intn / rand.Float64 are not safe for concurrent use.
+func (m *MockBroker) randIntn(n int) int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.rng.Intn(n)
+}
+
+// randFloat64 returns a random float in [0.0,1.0) guarded by the mutex.
+func (m *MockBroker) randFloat64() float64 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.rng.Float64()
+}
+
+// getRealPrice looks up the latest price for a stock symbol from the TSDB
+// (stock_prices_daily). It first resolves the stock id from the main DB by
+// symbol, then reads the most recent daily close. Returns 0 if the price
+// cannot be determined or the TSDB connection is unavailable.
 func (m *MockBroker) getRealPrice(symbol string) float64 {
-	if m.db == nil || symbol == "" {
+	if m.db == nil || m.tsdb == nil || symbol == "" {
 		return 0
 	}
 
-	// Join with stocks table to look up by symbol
-	var daily models.StockPriceDaily
-	err := m.db.Table("stock_price_dailies").
-		Joins("JOIN stocks ON stocks.id = stock_price_dailies.stock_id").
-		Where("stocks.symbol = ?", symbol).
-		Order("stock_price_dailies.time DESC").
-		Select("stock_price_dailies.*").
-		First(&daily).Error
-	if err == nil && daily.Close > 0 {
-		return daily.Close
+	// Resolve stock id by symbol from the main DB
+	var stock models.Stock
+	if err := m.db.Where("symbol = ?", symbol).First(&stock).Error; err != nil || stock.ID == 0 {
+		return 0
 	}
 
-	return 0
+	// Look up the latest daily close from the TSDB (uses model TableName)
+	var daily models.StockPriceDaily
+	if err := m.tsdb.Model(&models.StockPriceDaily{}).
+		Where("stock_id = ?", stock.ID).
+		Order("time DESC").
+		First(&daily).Error; err != nil {
+		return 0
+	}
+
+	return daily.Close
 }

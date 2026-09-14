@@ -2,6 +2,8 @@ import { useState, useMemo } from 'react';
 import ReactECharts from 'echarts-for-react';
 import type { EChartsOption } from 'echarts';
 import { Spin } from 'antd';
+import InfoTip from '@/components/common/InfoTip';
+import { PERIOD_INFO } from '@/constants/predictions';
 import type { AccuracyTrend, PredictionPeriod } from '@/types';
 import './index.css';
 
@@ -27,15 +29,17 @@ export default function AccuracyChart({
   const [showTimeRange, setShowTimeRange] = useState<7 | 30 | -1>(30);
 
   const filteredData = useMemo(() => {
-    if (!data?.data) return [];
-    if (showTimeRange === -1) return data.data;
-    return data.data.slice(-showTimeRange);
+    if (!data) return [];
+    if (showTimeRange === -1) return data;
+    return data.slice(-showTimeRange);
   }, [data, showTimeRange]);
 
   const avgAccuracy = useMemo(() => {
-    if (filteredData.length === 0) return 0;
-    const sum = filteredData.reduce((acc, d) => acc + d.accuracy, 0);
-    return (sum / filteredData.length) * 100;
+    // 无数据日（accuracy 为 null）为断点，不参与均值计算
+    const valid = filteredData.filter((d) => d.accuracy !== null);
+    if (valid.length === 0) return null;
+    const sum = valid.reduce((acc, d) => acc + (d.accuracy as number), 0);
+    return (sum / valid.length) * 100;
   }, [filteredData]);
 
   const chartOption: EChartsOption = {
@@ -46,11 +50,12 @@ export default function AccuracyChart({
       borderColor: '#333',
       textStyle: { color: '#e0e0e0', fontSize: 12 },
       formatter: (params: unknown) => {
-        const p = params as Array<{ axisValue: string; value: number; seriesName: string }>;
+        const p = params as Array<{ axisValue: string; value: number | null; seriesName: string }>;
         if (!p || p.length === 0) return '';
+        const value = p[0].value;
         return `
           <div style="font-weight:600;margin-bottom:4px">${p[0].axisValue}</div>
-          <div>${p[0].seriesName}: ${(p[0].value * 100).toFixed(1)}%</div>
+          <div>${p[0].seriesName}: ${value === null || value === undefined ? '无数据' : `${(value * 100).toFixed(1)}%`}</div>
         `;
       },
     },
@@ -92,6 +97,8 @@ export default function AccuracyChart({
         name: '准确率',
         type: 'line',
         data: filteredData.map((d) => d.accuracy),
+        // 无数据日（null）为断点，折线断开不连线
+        connectNulls: false,
         smooth: true,
         symbol: 'circle',
         symbolSize: 4,
@@ -115,22 +122,26 @@ export default function AccuracyChart({
             ],
           },
         },
-        markLine: {
-          silent: true,
-          symbol: 'none',
-          lineStyle: {
-            color: 'var(--text-tertiary)',
-            type: 'dashed',
-          },
-          label: {
-            color: 'var(--text-tertiary)',
-            fontSize: 11,
-            formatter: `均值: ${avgAccuracy.toFixed(1)}%`,
-          },
-          data: [
-            { yAxis: avgAccuracy / 100 },
-          ],
-        },
+        // 全为断点（无有效均值）时不绘制均值参考线
+        markLine:
+          avgAccuracy === null
+            ? undefined
+            : {
+                silent: true,
+                symbol: 'none',
+                lineStyle: {
+                  color: 'var(--text-tertiary)',
+                  type: 'dashed',
+                },
+                label: {
+                  color: 'var(--text-tertiary)',
+                  fontSize: 11,
+                  formatter: `均值: ${avgAccuracy.toFixed(1)}%`,
+                },
+                data: [
+                  { yAxis: avgAccuracy / 100 },
+                ],
+              },
       },
     ],
   };
@@ -149,17 +160,20 @@ export default function AccuracyChart({
   return (
     <div className="accuracy-chart">
       <div className="accuracy-chart-header">
-        <span className="accuracy-chart-title">预测准确率趋势</span>
+        <span className="accuracy-chart-title">
+          <InfoTip tip="横轴为日期，纵轴为当日到期预测的准确率（%）；无评估的日期显示为断点。数据来自已评估的预测记录。">预测准确率趋势</InfoTip>
+        </span>
         <div className="accuracy-chart-controls">
           <div className="accuracy-chart-periods">
             {PERIOD_OPTIONS.map((opt) => (
-              <button
-                key={opt.value}
-                className={`accuracy-chart-period-btn ${currentPeriod === opt.value ? 'active' : ''}`}
-                onClick={() => onPeriodChange(opt.value)}
-              >
-                {opt.label}
-              </button>
+              <InfoTip key={opt.value} tip={PERIOD_INFO[opt.value].desc} placement="bottom">
+                <button
+                  className={`accuracy-chart-period-btn ${currentPeriod === opt.value ? 'active' : ''}`}
+                  onClick={() => onPeriodChange(opt.value)}
+                >
+                  {opt.label}
+                </button>
+              </InfoTip>
             ))}
           </div>
           <div className="accuracy-chart-range">
@@ -190,13 +204,17 @@ export default function AccuracyChart({
           style={{ height: 320, width: '100%' }}
           notMerge
           lazyUpdate
-          opts={{ renderer: 'canvas' }}
+          opts={{
+            renderer: 'canvas',
+            // 固定至少 2x 渲染，避免缩放下出现图表模糊
+            devicePixelRatio: Math.max(2, Math.round(window.devicePixelRatio || 1)),
+          }}
         />
       </div>
       <div className="accuracy-chart-summary">
         <span className="accuracy-chart-summary-label">当前平均准确率</span>
         <span className="accuracy-chart-summary-value">
-          {avgAccuracy.toFixed(1)}%
+          {avgAccuracy === null ? '—（无数据）' : `${avgAccuracy.toFixed(1)}%`}
         </span>
       </div>
     </div>

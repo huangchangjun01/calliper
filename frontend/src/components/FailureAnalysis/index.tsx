@@ -5,6 +5,8 @@ import {
   MinusOutlined,
 } from '@ant-design/icons';
 import type { FailureCase, PredictionDirection } from '@/types';
+import InfoTip from '@/components/common/InfoTip';
+import { PERIOD_INFO } from '@/constants/predictions';
 import './index.css';
 
 interface FailureAnalysisProps {
@@ -18,10 +20,13 @@ const DIRECTION_CONFIG: Record<PredictionDirection, { label: string; color: stri
   flat: { label: '震荡', color: 'var(--text-tertiary)', icon: <MinusOutlined /> },
 };
 
-const REASON_COLORS: Record<string, string> = {
-  '财报发布': '#faad14',
-  '行业异动': '#ff7a45',
-  '突发事件': '#f5222d',
+const PERIOD_LABEL: Record<string, string> = {
+  short: PERIOD_INFO.short.label,
+  medium: PERIOD_INFO.medium.label,
+  long: PERIOD_INFO.long.label,
+  short_term: PERIOD_INFO.short.label,
+  medium_term: PERIOD_INFO.medium.label,
+  long_term: PERIOD_INFO.long.label,
 };
 
 export default function FailureAnalysis({ data, loading }: FailureAnalysisProps) {
@@ -39,7 +44,9 @@ export default function FailureAnalysis({ data, loading }: FailureAnalysisProps)
   return (
     <div className="failure-analysis">
       <div className="failure-analysis-header">
-        <span className="failure-analysis-title">预测失败归因分析</span>
+        <span className="failure-analysis-title">
+          <InfoTip tip="对连续判定失败（≥3 次）或命中异常波动的预测进行归因，给出推测性原因，帮助定位模型失准模式。">预测失败归因分析</InfoTip>
+        </span>
         <span className="failure-analysis-count">{data.length} 条记录</span>
       </div>
 
@@ -56,20 +63,15 @@ export default function FailureAnalysis({ data, loading }: FailureAnalysisProps)
                 <th>名称</th>
                 <th>预测方向</th>
                 <th>实际方向</th>
-                <th>预测价</th>
-                <th>实际价</th>
-                <th>日期</th>
-                <th>可能原因</th>
+                <th>周期</th>
+                <th>预测时间</th>
+                <th>归因摘要</th>
               </tr>
             </thead>
             <tbody>
               {data.map((item) => {
-                const predCfg = DIRECTION_CONFIG[item.predictedDirection];
-                const actualCfg = DIRECTION_CONFIG[item.actualDirection];
-                const priceDiff = item.actualPrice - item.predictedPrice;
-                const priceDiffPercent = item.predictedPrice > 0
-                  ? ((priceDiff / item.predictedPrice) * 100)
-                  : 0;
+                const predCfg = DIRECTION_CONFIG[item.predicted_direction];
+                const actualCfg = DIRECTION_CONFIG[item.actual_direction];
 
                 return (
                   <tr key={item.id}>
@@ -87,30 +89,12 @@ export default function FailureAnalysis({ data, loading }: FailureAnalysisProps)
                         {actualCfg.label}
                       </span>
                     </td>
-                    <td className="col-price">¥{item.predictedPrice.toFixed(2)}</td>
-                    <td className={`col-price ${priceDiff > 0 ? 'price-up' : priceDiff < 0 ? 'price-down' : ''}`}>
-                      ¥{item.actualPrice.toFixed(2)}
-                      <span className="failure-analysis-price-diff">
-                        ({priceDiffPercent >= 0 ? '+' : ''}{priceDiffPercent.toFixed(1)}%)
-                      </span>
+                    <td>{PERIOD_LABEL[item.period] ?? item.period}</td>
+                    <td className="col-date">
+                      {new Date(item.predicted_at).toLocaleString('zh-CN')}
                     </td>
-                    <td className="col-date">{item.date}</td>
                     <td>
-                      <div className="failure-analysis-reasons">
-                        {item.reasons.map((reason, idx) => (
-                          <span
-                            key={idx}
-                            className="failure-analysis-reason-tag"
-                            style={{
-                              color: REASON_COLORS[reason] || 'var(--text-tertiary)',
-                              background: `${REASON_COLORS[reason] || 'var(--text-tertiary)'}15`,
-                              borderColor: `${REASON_COLORS[reason] || 'var(--text-tertiary)'}30`,
-                            }}
-                          >
-                            {reason}
-                          </span>
-                        ))}
-                      </div>
+                      <span className="failure-analysis-summary">{item.summary || '--'}</span>
                     </td>
                   </tr>
                 );

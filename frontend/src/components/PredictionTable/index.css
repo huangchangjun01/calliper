@@ -54,10 +54,10 @@
 }
 
 .prediction-table th {
-  padding: var(--spacing-sm) var(--spacing-md);
-  font-size: var(--font-size-xs);
+  padding: 10px 12px;
+  font-size: var(--font-size-sm);
   font-weight: 500;
-  color: var(--text-tertiary);
+  color: var(--text-secondary);
   text-align: left;
   background: var(--bg-container);
   border-bottom: 1px solid var(--border-color);
@@ -75,7 +75,7 @@
 }
 
 .prediction-table td {
-  padding: var(--spacing-sm) var(--spacing-md);
+  padding: 10px 12px;
   font-size: var(--font-size-sm);
   color: var(--text-primary);
   border-bottom: 1px solid var(--border-color);
@@ -239,4 +239,121 @@
   border: 1px solid rgba(22, 119, 255, 0.2);
   border-radius: var(--border-radius);
   white-space: nowrap;
+}
+
+/* ========== 筛选工具栏 ========== */
+
+.prediction-table-filters {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-container);
+}
+
+.prediction-table-filter {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.prediction-table-filter-label {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+/* ========== 状态徽章 ========== */
+
+.prediction-table-status-badge {
+  display: inline-block;
+  padding: 1px 8px;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  border: 1px solid;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+/* ========== 表格列 ========== */
+
+.prediction-table td.col-conf {
+  font-weight: 600;
+  color: var(--color-primary);
+}
+
+.prediction-table td.col-right {
+  text-align: right;
+}
+
+.prediction-table th.col-right {
+  text-align: right;
+}
+
+.prediction-table td.col-price {
+  font-weight: 600;
+}
+
+/* 目标价 / 实际价 对比单元格 */
+.prediction-table-price-compare {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  font-size: var(--font-size-xs);
+  white-space: nowrap;
+}
+
+.prediction-table-price-sep {
+  margin: 0 3px;
+  font-style: normal;
+  color: var(--text-tertiary);
+  opacity: 0.6;
+}
+
+.prediction-table-price-compare em {
+  font-style: normal;
+  font-weight: 600;
+}
+
+.prediction-table-price-compare .diff-up,
+.prediction-table .diff-up {
+  color: var(--color-error, #ef5350);
+}
+
+.prediction-table-price-compare .diff-down,
+.prediction-table .diff-down {
+  color: var(--color-success, #26a69a);
+}
+
+.prediction-table td.col-date {
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+}
+
+.prediction-table th.col-expired,
+.prediction-table td.col-expired {
+  text-align: center;
+}
+
+.prediction-table-expired {
+  color: var(--text-tertiary);
+  font-size: var(--font-size-xs);
+}
+
+.prediction-table-valid {
+  color: var(--color-success);
+  font-size: var(--font-size-xs);
+}
+
+/* ========== 加载更多 ========== */
+
+.prediction-table-loadmore {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-md);
+  border-top: 1px solid var(--border-color);
 }

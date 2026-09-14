@@ -1,0 +1,8 @@
+.venv
+.ml-models
+mlflow.db
+*.env*
+.git
+dump.rdb
+__pycache__
+*.pyc

@@ -88,7 +88,7 @@ class ShortTermPredictor:
         ).to(self.device)
         self.input_size = input_size
 
-    def train(self, df, y, epochs=50, batch_size=32, lr=0.001):
+    def train(self, df, y, epochs=50, batch_size=128, lr=0.001):
         """训练模型。df: 特征数据 (DataFrame 或 numpy array), y: 标签数据 (numpy array)"""
         if df is None or y is None:
             raise ValueError("训练数据不能为空，必须提供真实市场数据")
@@ -123,9 +123,9 @@ class ShortTermPredictor:
                 optimizer.step()
                 total_loss += loss.item()
 
-            if (epoch + 1) % 10 == 0:
+            if (epoch + 1) % 5 == 0:
                 avg_loss = total_loss / len(loader)
-                print(f"[ShortTerm] Epoch {epoch+1}/{epochs} - Loss: {avg_loss:.4f}")
+                print(f"[ShortTerm] Epoch {epoch+1}/{epochs} - Loss: {avg_loss:.4f}", flush=True)
 
     def predict(self, df, current_price=None):
         """预测。df: 特征数据 (DataFrame 或 numpy array), current_price: 当前价格（用于计算目标价位）"""
@@ -179,7 +179,8 @@ class ShortTermPredictor:
         if arr.ndim == 3:
             arr = arr[0]  # 取第一个 batch
         if arr.ndim == 2:
-            return float(arr[-1, -1]) if arr.shape[1] > 0 else 100.0
+            # 特征列顺序为 [open, high, low, close, volume]，close 在索引 3
+            return float(arr[-1, 3]) if arr.shape[1] > 4 else (float(arr[-1, -1]) if arr.shape[1] > 0 else 100.0)
         return 100.0
 
     def save(self, path):

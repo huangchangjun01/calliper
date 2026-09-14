@@ -1,6 +1,8 @@
 import ReactECharts from 'echarts-for-react';
 import type { EChartsOption } from 'echarts';
 import type { PredictionSummary, PredictionPeriod } from '@/types';
+import InfoTip from '@/components/common/InfoTip';
+import { PERIOD_INFO } from '@/constants/predictions';
 import './index.css';
 
 interface PredictionCardProps {
@@ -9,9 +11,9 @@ interface PredictionCardProps {
 }
 
 const PERIOD_CONFIG: Record<PredictionPeriod, { label: string; icon: string; description: string }> = {
-  short: { label: '短期预测', icon: '📊', description: '1-3 个交易日' },
-  medium: { label: '中短期预测', icon: '📈', description: '1-2 周' },
-  long: { label: '长期预测', icon: '🎯', description: '1-3 个月' },
+  short: { label: '短期预测', icon: '📊', description: `未来 ${PERIOD_INFO.short.horizonDays} 个交易日` },
+  medium: { label: '中短期预测', icon: '📈', description: `未来 ${PERIOD_INFO.medium.horizonDays} 个交易日` },
+  long: { label: '长期预测', icon: '🎯', description: `未来 ${PERIOD_INFO.long.horizonDays} 个交易日` },
 };
 
 export default function PredictionCard({ data, period }: PredictionCardProps) {
@@ -57,7 +59,9 @@ export default function PredictionCard({ data, period }: PredictionCardProps) {
       <div className="prediction-card-header">
         <span className="prediction-card-icon">{config.icon}</span>
         <div className="prediction-card-title-group">
-          <span className="prediction-card-title">{config.label}</span>
+          <span className="prediction-card-title">
+            <InfoTip tip={PERIOD_INFO[period].desc} title={config.label}>{config.label}</InfoTip>
+          </span>
           <span className="prediction-card-desc">{config.description}</span>
         </div>
       </div>
@@ -69,35 +73,47 @@ export default function PredictionCard({ data, period }: PredictionCardProps) {
             style={{ height: 140, width: '100%' }}
             notMerge
             lazyUpdate
-            opts={{ renderer: 'canvas' }}
+            opts={{
+              renderer: 'canvas',
+              // 固定至少 2x 渲染，避免缩放下出现图表模糊
+              devicePixelRatio: Math.max(2, Math.round(window.devicePixelRatio || 1)),
+            }}
           />
         </div>
 
         <div className="prediction-card-stats">
           <div className="prediction-card-stat">
             <span className="prediction-card-stat-label">总数</span>
-            <span className="prediction-card-stat-value">{data.total}</span>
+            <InfoTip tip="该周期全部预测记录数（含待验证/已对/已错）">
+              <span className="prediction-card-stat-value">{data.total}</span>
+            </InfoTip>
           </div>
           <div className="prediction-card-stat prediction-card-stat--up">
             <span className="prediction-card-stat-label">看涨</span>
-            <span className="prediction-card-stat-value">
-              {data.upCount}
-              <span className="prediction-card-stat-percent">({upPercent}%)</span>
-            </span>
+            <InfoTip tip="模型判定未来上涨的预测数量">
+              <span className="prediction-card-stat-value">
+                {data.upCount}
+                <span className="prediction-card-stat-percent">({upPercent}%)</span>
+              </span>
+            </InfoTip>
           </div>
           <div className="prediction-card-stat prediction-card-stat--down">
             <span className="prediction-card-stat-label">看跌</span>
-            <span className="prediction-card-stat-value">
-              {data.downCount}
-              <span className="prediction-card-stat-percent">({downPercent}%)</span>
-            </span>
+            <InfoTip tip="模型判定未来下跌的预测数量">
+              <span className="prediction-card-stat-value">
+                {data.downCount}
+                <span className="prediction-card-stat-percent">({downPercent}%)</span>
+              </span>
+            </InfoTip>
           </div>
           <div className="prediction-card-stat prediction-card-stat--flat">
             <span className="prediction-card-stat-label">震荡</span>
-            <span className="prediction-card-stat-value">
-              {data.flatCount}
-              <span className="prediction-card-stat-percent">({flatPercent}%)</span>
-            </span>
+            <InfoTip tip="模型判定未来横盘整理的预测数量">
+              <span className="prediction-card-stat-value">
+                {data.flatCount}
+                <span className="prediction-card-stat-percent">({flatPercent}%)</span>
+              </span>
+            </InfoTip>
           </div>
         </div>
       </div>

@@ -1,4 +1,5 @@
 import type { ApiResponse } from '@/types';
+import { useAuthStore } from '@/stores/authStore';
 
 const BASE_URL = '/api/v1';
 
@@ -77,7 +78,12 @@ async function request<T = unknown>(
 
   if (!res.ok) {
     if (res.status === 401) {
-      // 令牌过期，清除本地存储
+      // 令牌过期：清除本地会话并同步登出（清空 auth store + 断开会话 WS）
+      try {
+        useAuthStore.getState().logout();
+      } catch {
+        // 忽略
+      }
       try {
         localStorage.removeItem('auth_token');
         localStorage.removeItem('auth_user');

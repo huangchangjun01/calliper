@@ -9,6 +9,7 @@ import numpy as np
 from typing import Optional
 from sqlalchemy import create_engine, text, Table, Column, MetaData, JSON, String, Date, Float
 from datetime import datetime
+import re
 
 
 class FeatureStore:
@@ -21,8 +22,8 @@ class FeatureStore:
         Args:
             db_url: PostgreSQL 数据库连接 URL
         """
-        self.db_url = db_url
-        self.engine = create_engine(db_url)
+        self.db_url = re.sub(r'^postgres://', 'postgresql://', db_url)
+        self.engine = create_engine(self.db_url)
         self.metadata = MetaData()
 
         # 定义特征表

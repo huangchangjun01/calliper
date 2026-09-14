@@ -1,5 +1,6 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
 import { Pagination } from 'antd';
 import type { StockSearchItem, PaginatedData } from '@/types';
 import api from '@/services/api';
@@ -45,9 +46,21 @@ async function fetchStocks(params: {
 }
 
 export default function StockSearch() {
-  const [keyword, setKeyword] = useState('');
-  const [market, setMarket] = useState('');
-  const [page, setPage] = useState(1);
+  const [searchParams, setSearchParams] = useSearchParams();
+  // 市场 tab / 关键词 / 页码持久化到 URL，离开或刷新后仍保留
+  const keyword = searchParams.get('q') ?? '';
+  const market = searchParams.get('market') ?? '';
+  const page = Math.max(1, Number(searchParams.get('page') || 1)) || 1;
+
+  const applyParams = useCallback(
+    (mutate: (p: URLSearchParams) => void, resetPage = false) => {
+      const p = new URLSearchParams(searchParams);
+      if (resetPage) p.delete('page');
+      mutate(p);
+      setSearchParams(p, { replace: true });
+    },
+    [searchParams, setSearchParams]
+  );
 
   const { data, isLoading } = useQuery({
     queryKey: ['stocks', 'search', keyword, market, page],
@@ -81,18 +94,25 @@ export default function StockSearch() {
   }, [baseStocks, quoteMap]);
 
   const handleMarketChange = useCallback((newMarket: string) => {
-    setMarket(newMarket);
-    setPage(1);
-  }, []);
+    applyParams((p) => {
+      if (newMarket) p.set('market', newMarket);
+      else p.delete('market');
+    }, true);
+  }, [applyParams]);
 
   const handleKeywordChange = useCallback((newKeyword: string) => {
-    setKeyword(newKeyword);
-    setPage(1);
-  }, []);
+    applyParams((p) => {
+      if (newKeyword) p.set('q', newKeyword);
+      else p.delete('q');
+    }, true);
+  }, [applyParams]);
 
   const handlePageChange = useCallback((newPage: number) => {
-    setPage(newPage);
-  }, []);
+    applyParams((p) => {
+      if (newPage > 1) p.set('page', String(newPage));
+      else p.delete('page');
+    });
+  }, [applyParams]);
 
   return (
     <div className={styles.container}>

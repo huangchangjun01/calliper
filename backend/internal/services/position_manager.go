@@ -49,14 +49,14 @@ func (pm *PositionManager) UpdatePosition(symbol string, quantity int, price dec
 		}
 
 		position := models.Position{
-			UserID:         1,
-			StockID:        stock.ID,
-			Quantity:       quantity,
-			AvgCost:        price.InexactFloat64(),
-			CurrentValue:   price.InexactFloat64() * float64(quantity),
-			UnrealizedPnL:  0,
-			RealizedPnL:    0,
-			IsReal:         false,
+			UserID:        1,
+			StockID:       stock.ID,
+			Quantity:      quantity,
+			AvgCost:       price.InexactFloat64(),
+			CurrentValue:  price.InexactFloat64() * float64(quantity),
+			UnrealizedPnL: 0,
+			RealizedPnL:   0,
+			IsReal:        false,
 		}
 		return pm.db.Create(&position).Error
 	}
@@ -75,10 +75,10 @@ func (pm *PositionManager) UpdatePosition(symbol string, quantity int, price dec
 		// Position fully closed
 		realizedPnL := (price.InexactFloat64() - existing.AvgCost) * float64(existing.Quantity)
 		return pm.db.Model(&existing).Updates(map[string]interface{}{
-			"quantity":        0,
-			"current_value":   0,
-			"unrealized_pnl":  0,
-			"realized_pnl":    existing.RealizedPnL + realizedPnL,
+			"quantity":       0,
+			"current_value":  0,
+			"unrealized_pnl": 0,
+			"realized_pnl":   existing.RealizedPnL + realizedPnL,
 		}).Error
 	}
 

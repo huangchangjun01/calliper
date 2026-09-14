@@ -37,7 +37,6 @@ export interface ErrorLog {
 }
 
 export interface DataLatency {
-  kafkaLag: number;
   redisHitRate: number;
   updateTime: string;
 }
@@ -69,8 +68,8 @@ export interface ModelInfo {
   period: 'short' | 'medium' | 'long';
   version: string;
   accuracy: number;
-  lastTrainTime: string | null;
-  status: 'idle' | 'training' | 'evaluating' | 'ready' | 'error';
+  last_train_time: string | null;
+  status: 'ready' | 'error';
   params: ShortModelParams | MediumModelParams | LongModelParams;
 }
 
@@ -92,12 +91,39 @@ export interface LongModelParams {
   num_layers: number;
 }
 
+export type TrainingPeriod = 'short_term' | 'medium_term' | 'long_term' | 'all';
+
+export interface TrainingLog {
+  id: string;
+  period: 'short_term' | 'medium_term' | 'long_term';
+  version: string;
+  accuracy: number;
+  sample_count: number;
+  trigger_type: 'manual' | 'daily' | 'weekly';
+  status: 'running' | 'success' | 'failed';
+  started_at: string | null;
+  finished_at?: string | null;
+  duration_sec?: number | null;
+  error_message?: string | null;
+  created_at: string | null;
+}
+
+export interface TrainingJob {
+  id: string;
+  name: string;
+  next_run: string | null;
+  trigger: string;
+}
+
 // ========== 数据源配置 ==========
 
 export function useDataSources() {
   return useQuery<DataSource[]>({
     queryKey: ['admin', 'datasources'],
-    queryFn: () => api.get('/admin/datasources'),
+    queryFn: () =>
+      api
+        .get<{ sources: DataSource[] }>('/admin/datasources')
+        .then((res) => res?.sources ?? []),
     staleTime: 30_000,
   });
 }
@@ -139,7 +165,10 @@ export function useToggleDataSource() {
 export function useServiceHealth() {
   return useQuery<ServiceHealth[]>({
     queryKey: ['admin', 'health'],
-    queryFn: () => api.get('/admin/health'),
+    queryFn: () =>
+      api
+        .get<{ services: ServiceHealth[] }>('/admin/health')
+        .then((res) => res?.services ?? []),
     staleTime: 15_000,
     refetchInterval: 15_000,
   });
@@ -148,7 +177,10 @@ export function useServiceHealth() {
 export function useErrorLogs() {
   return useQuery<ErrorLog[]>({
     queryKey: ['admin', 'errors'],
-    queryFn: () => api.get('/admin/errors'),
+    queryFn: () =>
+      api
+        .get<{ logs: ErrorLog[] }>('/admin/errors')
+        .then((res) => res?.logs ?? []),
     staleTime: 30_000,
     refetchInterval: 30_000,
   });
@@ -168,7 +200,10 @@ export function useDataLatency() {
 export function useAdminUsers() {
   return useQuery<AdminUser[]>({
     queryKey: ['admin', 'users'],
-    queryFn: () => api.get('/admin/users'),
+    queryFn: () =>
+      api
+        .get<{ users: AdminUser[] }>('/admin/users')
+        .then((res) => res?.users ?? []),
     staleTime: 60_000,
   });
 }
@@ -207,10 +242,19 @@ export function useDeleteUser() {
 // ========== 模型管理 ==========
 
 export function useModels() {
-  return useQuery<ModelInfo[]>({
+  return useQuery<{ models: ModelInfo[]; degraded: boolean }>({
     queryKey: ['admin', 'models'],
-    queryFn: () => api.get('/admin/models'),
+    queryFn: async () => {
+      const res = await api.get<{ status?: string; models: ModelInfo[] }>(
+        '/admin/models'
+      );
+      return {
+        models: res?.models ?? [],
+        degraded: res?.status === 'degraded',
+      };
+    },
     staleTime: 30_000,
+    refetchInterval: 30_000,
   });
 }
 
@@ -251,6 +295,68 @@ export function useTriggerPrediction() {
     mutationFn: (id: string) => api.post(`/admin/models/${id}/predict`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'models'] });
+    },
+  });
+}
+
+// ========== 训练中心 ==========
+
+export function useTrainingHistory(limit = 50, offset = 0) {
+  return useQuery<TrainingLog[]>({
+    queryKey: ['admin', 'training', 'history', limit, offset],
+    queryFn: () =>
+      api
+        .get<{ logs: TrainingLog[] }>('/admin/training/history', {
+          limit,
+          offset,
+        })
+        .then((res) => res?.logs ?? []),
+    staleTime: 30_000,
+    // 存在运行中的训练时每 5 秒轮询一次，刷新状态；全部结束后自动停止轮询。
+    refetchInterval: (query) => {
+      const logs = query.state.data as TrainingLog[] | undefined;
+      return logs?.some((l) => l.status === 'running') ? 5000 : false;
+    },
+  });
+}
+
+export function useTrainingSchedule() {
+  return useQuery<TrainingJob[]>({
+    queryKey: ['admin', 'training', 'schedule'],
+    queryFn: () =>
+      api
+        .get<{ status: string; jobs: TrainingJob[] }>('/admin/training/schedule')
+        .then((res) =>
+          res?.status === 'degraded' ? [] : (res?.jobs ?? []),
+        ),
+    staleTime: 30_000,
+  });
+}
+
+export function useRunTraining() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (period: TrainingPeriod) =>
+      api.post('/admin/training/run', { period }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'models'] });
+      queryClient.invalidateQueries({
+        queryKey: ['admin', 'training', 'history'],
+      });
+    },
+  });
+}
+
+export function useRollbackModel() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ period, version }: { period: string; version: string }) =>
+      api.post('/admin/training/rollback', { period, version }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'models'] });
+      queryClient.invalidateQueries({
+        queryKey: ['admin', 'training', 'history'],
+      });
     },
   });
 }

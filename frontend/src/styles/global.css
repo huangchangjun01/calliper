@@ -42,6 +42,8 @@
   --sidebar-width: 220px;
   --sidebar-collapsed-width: 64px;
   --header-height: 56px;
+  /* 内容区最大宽度：宽屏下限制内容伸展，保证两侧留白对称、页面整洁 */
+  --content-max-width: 1440px;
 
   /* 字体 */
   --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
@@ -502,6 +504,9 @@ button.dropdown-item:hover {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
+  /* 允许 flex 子项收缩到内容最小宽度以下，宽内容（行情表/网格）改为容器内滚动，
+     避免将页面整体撑宽后被 overflow-x:hidden 裁切 */
+  min-width: 0;
 }
 
 .layout-sidebar[style*="64px"] ~ .layout-main {
@@ -512,17 +517,10 @@ button.dropdown-item:hover {
   flex: 1;
   padding: var(--spacing-xl);
   overflow-y: auto;
+  min-width: 0;
 }
 
 /* ========== 页面占位组件 ========== */
-
-.page-container {
-  max-width: 1200px;
-}
-
-.page-container h1 {
-  margin-bottom: var(--spacing-sm);
-}
 
 .page-description {
   color: var(--text-secondary);
@@ -530,36 +528,52 @@ button.dropdown-item:hover {
   font-size: var(--font-size-base);
 }
 
-.page-placeholder {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 300px;
-  background: var(--bg-base);
-  border: 1px dashed var(--border-color);
-  border-radius: var(--border-radius-lg);
-}
+/* ========== 404 页面 ========== */
 
-.placeholder-card {
+.not-found {
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
+  min-height: 60vh;
   gap: var(--spacing-md);
-  color: var(--text-tertiary);
+  text-align: center;
+}
+
+.not-found-code {
+  font-size: 72px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--color-primary);
+}
+
+.not-found-title {
+  font-size: var(--font-size-xxl);
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.not-found-desc {
+  color: var(--text-secondary);
   font-size: var(--font-size-base);
 }
 
-.placeholder-icon {
-  font-size: 48px;
+.not-found-link {
+  margin-top: var(--spacing-md);
+  color: var(--color-primary);
+  font-size: var(--font-size-base);
+  text-decoration: none;
+}
+
+.not-found-link:hover {
+  text-decoration: underline;
 }
 
 /* ========== 响应式设计 ========== */
 
 @media (max-width: 768px) {
-  .layout-sidebar {
-    width: var(--sidebar-width) !important;
-  }
-
+  /* 移动端：主区占满全宽，侧边栏作为抽屉（fixed 覆盖其上），
+     宽度由 JS 按 collapsed/mobileOpen 控制，不再强制覆盖 */
   .layout-main {
     margin-left: 0 !important;
   }
@@ -567,6 +581,70 @@ button.dropdown-item:hover {
   .layout-content {
     padding: var(--spacing-lg);
   }
+}
+
+/* ========== 表格统一规范 ==========
+   统一 antd Table 与自绘表格的视觉风格：
+   - 表头：13px / 字重 500 / 次级文字色 / 浅灰底 / 单行不换行
+   - 单元格：13px / 主文字色 / 数字等宽（tabular-nums）
+   - 表头与内容内边距一致：10px 12px，保证表头与列内容垂直对齐
+   ================================================================ */
+
+/* ---- antd Table 表头 ---- */
+div.ant-table-wrapper .ant-table-thead > tr > th,
+div.ant-table-wrapper .ant-table-thead > tr > td.ant-table-cell {
+  font-size: var(--font-size-sm) !important;
+  font-weight: 500 !important;
+  color: var(--text-secondary) !important;
+  background: var(--bg-container) !important;
+  white-space: nowrap !important;
+  padding: 10px 12px !important;
+  border-bottom: 1px solid var(--border-color);
+  text-align: left;
+}
+
+/* ---- antd Table 单元格 ---- */
+div.ant-table-wrapper .ant-table-tbody > tr > td {
+  padding: 10px 12px !important;
+  font-size: var(--font-size-sm) !important;
+  color: var(--text-primary) !important;
+  border-bottom: 1px solid var(--border-color);
+  font-variant-numeric: tabular-nums;
+}
+
+/* antd Table 行 hover 与选中态统一 */
+div.ant-table-wrapper .ant-table-tbody > tr.ant-table-row:hover > td {
+  background: var(--bg-container) !important;
+}
+
+/* antd Table 表头 hover（排序触发区）不改变底色，仅改变文字色 */
+div.ant-table-wrapper .ant-table-thead > tr > th:hover {
+  color: var(--color-primary) !important;
+}
+
+/* 分页器底部居中并留白 */
+div.ant-table-wrapper .ant-pagination {
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+/* antd Table 固定表头(虚拟滚动)时，占位表头与固定表头样式一致 */
+div.ant-table-wrapper .ant-table-header .ant-table-thead > tr > th {
+  text-align: left;
+}
+
+/* antd Table 固定列(冻结列)背景与所在区域保持一致，避免透明错位 */
+div.ant-table-wrapper .ant-table-thead > tr > th.ant-table-cell-fix-left,
+div.ant-table-wrapper .ant-table-thead > tr > th.ant-table-cell-fix-right {
+  background: var(--bg-container) !important;
+}
+div.ant-table-wrapper .ant-table-tbody > tr > td.ant-table-cell-fix-left,
+div.ant-table-wrapper .ant-table-tbody > tr > td.ant-table-cell-fix-right {
+  background: var(--bg-elevated);
+}
+div.ant-table-wrapper .ant-table-tbody > tr.ant-table-row:hover > td.ant-table-cell-fix-left,
+div.ant-table-wrapper .ant-table-tbody > tr.ant-table-row:hover > td.ant-table-cell-fix-right {
+  background: var(--bg-container) !important;
 }
 
 /* ========== 登录页面 ========== */

@@ -1,0 +1,73 @@
+.prediction-history {
+  background: var(--bg-base);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-lg);
+  overflow: hidden;
+}
+
+.prediction-history-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--spacing-sm) var(--spacing-lg);
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-container);
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+}
+
+.prediction-history-count {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+}
+
+.prediction-history-filters {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-md) var(--spacing-lg);
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.prediction-history-filter {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.prediction-history-filter-label {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+.prediction-history-body {
+  padding: var(--spacing-sm);
+}
+
+/* 生成预测弹窗 */
+.prediction-history-gen-tip {
+  margin-bottom: var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+.prediction-history-gen-results {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm) var(--spacing-md);
+  margin-top: var(--spacing-md);
+}
+
+.prediction-history-gen-result {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.prediction-history-gen-symbol {
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}

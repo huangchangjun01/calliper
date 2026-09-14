@@ -10,6 +10,8 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
+
+	"github.com/quant-trading/backend/internal/models"
 )
 
 var (
@@ -38,9 +40,9 @@ func DefaultConfig() Config {
 	cfg := Config{
 		Host:            getEnv("DB_HOST", "localhost"),
 		Port:            getEnvInt("DB_PORT", 5432),
-		User:            getEnv("DB_USER", "postgres"),
-		Password:        getEnv("DB_PASSWORD", "postgres"),
-		DBName:          getEnv("DB_NAME", "quant_trading"),
+		User:            getEnv("DB_USER", "calliper"),
+		Password:        getEnv("DB_PASSWORD", "10010hcj"),
+		DBName:          getEnv("DB_NAME", "calliper_trading"),
 		TSDBName:        getEnv("TSDB_NAME", ""),
 		SSLMode:         getEnv("DB_SSLMODE", "disable"),
 		MaxOpenConns:    getEnvInt("DB_MAX_OPEN_CONNS", 5),
@@ -94,6 +96,27 @@ func Initialize(cfg Config) error {
 	db = gormDB
 	log.Printf("Connected to main database: %s@%s:%d/%s", cfg.User, cfg.Host, cfg.Port, cfg.DBName)
 
+	// Auto-create any missing tables on the main database (idempotent).
+	if err := gormDB.AutoMigrate(
+		&models.Market{},
+		&models.Stock{},
+		&models.User{},
+		&models.Watchlist{},
+		&models.Order{},
+		&models.Position{},
+		&models.SimulatedTrade{},
+		&models.Prediction{},
+		&models.PredictionAccuracy{},
+		&models.SystemConfig{},
+		&models.AuditLog{},
+		&models.SimAccount{},
+		&models.RiskEvent{},
+		&models.ModelTrainingLog{},
+	); err != nil {
+		return fmt.Errorf("failed to auto-migrate main database schema: %w", err)
+	}
+	log.Println("Main database schema is up to date")
+
 	// TimescaleDB connection (may be the same database or a separate one)
 	tsdsn := cfg.dsn(cfg.TSDBName)
 	tsGormDB, err := gorm.Open(postgres.Open(tsdsn), &gorm.Config{
@@ -106,6 +129,18 @@ func Initialize(cfg Config) error {
 	applyPoolConfig(tsGormDB, cfg)
 	tsdb = tsGormDB
 	log.Printf("Connected to TimescaleDB: %s@%s:%d/%s", cfg.User, cfg.Host, cfg.Port, cfg.TSDBName)
+
+	// Auto-create any missing time-series tables (idempotent).
+	// Note: tables are created as plain tables; hypertable conversion requires
+	// the TimescaleDB extension and is handled by migrations where available.
+	if err := tsGormDB.AutoMigrate(
+		&models.StockPriceMinute{},
+		&models.StockPriceDaily{},
+		&models.StockPriceTick{},
+	); err != nil {
+		return fmt.Errorf("failed to auto-migrate TimescaleDB schema: %w", err)
+	}
+	log.Println("TimescaleDB schema is up to date")
 
 	return nil
 }

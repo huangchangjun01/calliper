@@ -5,6 +5,8 @@ import (
 	"log"
 	"sync"
 	"time"
+
+	"github.com/quant-trading/backend/internal/util"
 )
 
 // ──────────────────────────────────────────────────────────────
@@ -16,10 +18,10 @@ import (
 type EvaluationScheduler struct {
 	evalService *EvaluationService
 
-	mu       sync.Mutex
+	mu        sync.Mutex
 	isRunning bool
-	stopCh   chan struct{}
-	doneCh   chan struct{}
+	stopCh    chan struct{}
+	doneCh    chan struct{}
 }
 
 // NewEvaluationScheduler creates a new EvaluationScheduler.
@@ -45,7 +47,7 @@ func (s *EvaluationScheduler) Start(ctx context.Context) {
 	s.isRunning = true
 	s.mu.Unlock()
 
-	go s.loop(ctx)
+	util.SafeGo(func() { s.loop(ctx) })
 	log.Println("[EvaluationScheduler] Started — daily evaluation scheduled at 15:30 CST")
 }
 

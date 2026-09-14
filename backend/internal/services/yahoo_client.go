@@ -92,8 +92,7 @@ func (c *YahooClient) doFetch(marketCode string) ([]StockRaw, error) {
 
 	scrID, ok := scrIDMap[marketCode]
 	if !ok {
-		// Try to use most active stocks screener
-		return c.defaultStockList(marketCode), nil
+		return nil, fmt.Errorf("yahoo: unsupported market %s", marketCode)
 	}
 
 	url := fmt.Sprintf(
@@ -103,30 +102,30 @@ func (c *YahooClient) doFetch(marketCode string) ([]StockRaw, error) {
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return c.defaultStockList(marketCode), nil
+		return nil, fmt.Errorf("[Yahoo] create request: %w", err)
 	}
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		log.Printf("[Yahoo] Screener API error for %s: %v", marketCode, err)
-		return c.defaultStockList(marketCode), nil
+		// 不回落假数据：网络失败返回错误，交由上层决定。
+		return nil, fmt.Errorf("[Yahoo] Screener API error for %s: %w", marketCode, err)
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return c.defaultStockList(marketCode), nil
+		return nil, fmt.Errorf("[Yahoo] read body for %s: %w", marketCode, err)
 	}
 
 	// Parse Yahoo Finance screener response
 	type ScreenerQuote struct {
-		Symbol             string `json:"symbol"`
-		ShortName          string `json:"shortName"`
-		LongName           string `json:"longName"`
-		FullExchangeName   string `json:"fullExchangeName"`
-		Market             string `json:"market"`
-		Currency           string `json:"currency"`
+		Symbol             string  `json:"symbol"`
+		ShortName          string  `json:"shortName"`
+		LongName           string  `json:"longName"`
+		FullExchangeName   string  `json:"fullExchangeName"`
+		Market             string  `json:"market"`
+		Currency           string  `json:"currency"`
 		RegularMarketPrice float64 `json:"regularMarketPrice"`
 	}
 
@@ -140,8 +139,8 @@ func (c *YahooClient) doFetch(marketCode string) ([]StockRaw, error) {
 
 	var sr ScreenerResult
 	if err := json.Unmarshal(body, &sr); err != nil {
-		log.Printf("[Yahoo] JSON parse error for screener %s: %v", marketCode, err)
-		return c.defaultStockList(marketCode), nil
+		// 解析失败不回落假数据，直接返回错误让上层知晓。
+		return nil, fmt.Errorf("[Yahoo] JSON parse error for screener %s: %w", marketCode, err)
 	}
 
 	var stocks []StockRaw
@@ -192,7 +191,7 @@ func (c *YahooClient) doFetch(marketCode string) ([]StockRaw, error) {
 	}
 
 	if len(stocks) == 0 {
-		return c.defaultStockList(marketCode), nil
+		return nil, fmt.Errorf("[Yahoo] no stocks returned for market %s", marketCode)
 	}
 
 	log.Printf("yahoo: fetched %d stocks for %s from Yahoo Finance", len(stocks), marketCode)

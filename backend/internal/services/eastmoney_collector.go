@@ -34,6 +34,7 @@ func (c *EastMoneyCollector) GetMarketCode() string {
 // eastMoneySecID converts internal symbol to East Money secid format.
 // CN: "600519" -> "1.600519" (Shanghai), "000001" -> "0.000001" (Shenzhen)
 func (c *EastMoneyCollector) eastMoneySecID(symbol string) string {
+	symbol = normalizeSymbol(symbol)
 	upper := strings.ToUpper(symbol)
 	if strings.HasPrefix(upper, "6") || strings.HasPrefix(upper, "9") {
 		return "1." + symbol
@@ -49,9 +50,9 @@ const eastMoneyFields = "f43,f57,f58,f60,f169,f170,f171,f46,f47,f48,f162,f167,f1
 
 // emResponse is the top-level response from East Money API.
 type emResponse struct {
-	RC   int           `json:"rc"`
-	RT   int           `json:"rt"`
-	Data emStockData   `json:"data"`
+	RC   int         `json:"rc"`
+	RT   int         `json:"rt"`
+	Data emStockData `json:"data"`
 }
 
 // emStockData is the per-stock data from East Money API.

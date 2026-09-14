@@ -37,10 +37,15 @@ ml-dev:
 # ============================================
 
 db-migrate:
-	cd backend && go run ./cmd/migrate/main.go up
+	@echo "backend/cmd/migrate 目标尚不存在，请使用 backend/migrations/ 下的 SQL 脚本手工执行，例如:"
+	@echo "  psql -h localhost -U calliper -d calliper_trading -f backend/migrations/000001_init_schema.up.sql"
+	@exit 0
 
 db-reset:
-	cd backend && go run ./cmd/migrate/main.go reset
+	@echo "backend/cmd/migrate 目标尚不存在，请使用 backend/migrations/ 下的 SQL 脚本手工执行，例如:"
+	@echo "  psql -h localhost -U calliper -d calliper_trading -f backend/migrations/000001_init_schema.down.sql"
+	@echo "  然后重新执行 db-migrate 中的 up 脚本。"
+	@exit 0
 
 # ============================================
 # 工具

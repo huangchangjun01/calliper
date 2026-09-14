@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"strings"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/quant-trading/backend/internal/middleware"
 	"github.com/quant-trading/backend/internal/services"
+	"github.com/quant-trading/backend/internal/util"
 	ws "github.com/quant-trading/backend/internal/websocket"
 )
 
@@ -24,28 +26,49 @@ const (
 
 // WsHandler handles WebSocket connections for real-time quote streaming.
 type WsHandler struct {
-	hub          *ws.Hub
-	upgrader     websocket.Upgrader
-	jwtSecret    string
-	subManager   *services.QuoteSubscriptionManager
-	quoteService *services.QuotePushService
+	hub            *ws.Hub
+	upgrader       websocket.Upgrader
+	jwtSecret      string
+	allowedOrigins []string
+	subManager     *services.QuoteSubscriptionManager
+	quoteService   *services.QuotePushService
 }
 
 // NewWsHandler creates a new WsHandler.
-func NewWsHandler(hub *ws.Hub, jwtSecret string, subManager *services.QuoteSubscriptionManager, quoteService *services.QuotePushService) *WsHandler {
-	return &WsHandler{
-		hub:          hub,
-		jwtSecret:    jwtSecret,
-		subManager:   subManager,
-		quoteService: quoteService,
-		upgrader: websocket.Upgrader{
-			ReadBufferSize:  1024,
-			WriteBufferSize: 1024,
-			CheckOrigin: func(r *http.Request) bool {
-				return true
-			},
+func NewWsHandler(hub *ws.Hub, jwtSecret string, allowedOrigins []string, subManager *services.QuoteSubscriptionManager, quoteService *services.QuotePushService) *WsHandler {
+	h := &WsHandler{
+		hub:            hub,
+		jwtSecret:      jwtSecret,
+		allowedOrigins: allowedOrigins,
+		subManager:     subManager,
+		quoteService:   quoteService,
+	}
+	h.upgrader = websocket.Upgrader{
+		ReadBufferSize:  1024,
+		WriteBufferSize: 1024,
+		CheckOrigin: func(r *http.Request) bool {
+			return h.checkOrigin(r)
 		},
 	}
+	return h
+}
+
+// checkOrigin returns true when the request's Origin is empty (same-origin,
+// curl/daemon clients) or is listed in the CORS whitelist.
+func (h *WsHandler) checkOrigin(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return true
+	}
+	for _, o := range h.allowedOrigins {
+		if origin == o {
+			return true
+		}
+	}
+	if len(h.allowedOrigins) == 0 {
+		return true
+	}
+	return false
 }
 
 // HandleWebSocket handles the WebSocket upgrade request.
@@ -75,8 +98,8 @@ func (h *WsHandler) HandleWebSocket(c *gin.Context) {
 	client := ws.NewClient(h.hub, conn)
 	h.hub.Register(client)
 
-	go client.WritePump()
-	go h.readPump(client, conn, userID)
+	util.SafeGo(client.WritePump)
+	util.SafeGo(func() { h.readPump(client, conn, userID) })
 }
 
 // readPump reads messages from the WebSocket connection and dispatches them.
@@ -131,12 +154,10 @@ func (h *WsHandler) readPump(client *ws.Client, conn *websocket.Conn, userID str
 			}
 
 		case "ping":
-			pongMsg := services.NewWSMessage("pong", "", nil)
-			conn.SetWriteDeadline(time.Now().Add(wsWriteWait))
-			if err := conn.WriteJSON(pongMsg); err != nil {
-				log.Printf("[WsHandler] Failed to send pong (user=%s): %v", userID, err)
-				return
-			}
+			// Route the pong through the client's send channel so WritePump
+			// (the single writer) encodes and writes it. Silently drop the
+			// message if the send buffer is full.
+			client.Send(&ws.Message{Type: "pong", Channel: "", Data: nil})
 		}
 	}
 }
@@ -144,6 +165,9 @@ func (h *WsHandler) readPump(client *ws.Client, conn *websocket.Conn, userID str
 // parseToken validates a JWT token string and returns the claims.
 func (h *WsHandler) parseToken(tokenString string) (*middleware.Claims, error) {
 	token, err := jwt.ParseWithClaims(tokenString, &middleware.Claims{}, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
 		return []byte(h.jwtSecret), nil
 	})
 	if err != nil {

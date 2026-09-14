@@ -60,10 +60,10 @@ type PositionInfo struct {
 
 // AccountInfo represents account asset information returned by the broker.
 type AccountInfo struct {
-	TotalAssets  float64 `json:"total_assets"`
+	TotalAssets   float64 `json:"total_assets"`
 	AvailableCash float64 `json:"available_cash"`
-	FrozenCash   float64 `json:"frozen_cash"`
-	MarketValue  float64 `json:"market_value"`
-	TotalPnL     float64 `json:"total_pnl"`
-	TodayPnL     float64 `json:"today_pnl"`
+	FrozenCash    float64 `json:"frozen_cash"`
+	MarketValue   float64 `json:"market_value"`
+	TotalPnL      float64 `json:"total_pnl"`
+	TodayPnL      float64 `json:"today_pnl"`
 }

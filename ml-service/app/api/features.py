@@ -36,6 +36,15 @@ class ComputeRequest(BaseModel):
 # Endpoints
 # ──────────────────────────────────────────────────────────────
 
+@router.get("/history")
+async def get_feature_history_global(request: Request):
+    """获取全局历史特征概要（避免被 /{symbol} 吞掉）。
+
+    当前没有全局特征历史存储实现，返回空数组。
+    """
+    return []
+
+
 @router.get("/{symbol}", response_model=FeatureSnapshot)
 async def get_features(symbol: str, request: Request):
     """获取最新特征数据，使用真实特征管线"""
@@ -81,6 +90,9 @@ async def compute_features(request: Request, body: ComputeRequest):
                 elif name in ("returns", "volatility"):
                     category = "price"
                 items.append(FeatureItem(name=name, value=float(value), category=category))
+            if not items:
+                print(f"[Features] No feature data for {symbol}, skipping")
+                continue
             results[symbol] = FeatureSnapshot(
                 symbol=symbol,
                 computed_at=datetime.datetime.utcnow().isoformat() + "Z",

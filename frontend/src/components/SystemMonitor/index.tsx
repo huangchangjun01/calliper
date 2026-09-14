@@ -1,4 +1,4 @@
-import { Card, Table, Tag, Progress, Statistic } from 'antd';
+import { Card, Table, Tag, Progress } from 'antd';
 import {
   CheckCircleFilled,
   CloseCircleFilled,
@@ -6,6 +6,7 @@ import {
   DatabaseOutlined,
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
+import InfoTip from '@/components/common/InfoTip';
 import {
   useServiceHealth,
   useErrorLogs,
@@ -14,6 +15,14 @@ import {
   type ErrorLog,
 } from '@/services/admin';
 import dayjs from 'dayjs';
+
+// 格式化服务心跳时间：空/无效/Go 零时间（年份<2000）显示 '-'
+function formatHeartbeat(value?: string | null): string {
+  if (!value) return '-';
+  const d = dayjs(value);
+  if (!d.isValid() || d.year() < 2000) return '-';
+  return d.format('HH:mm:ss');
+}
 
 export default function SystemMonitor() {
   const { data: services = [] } = useServiceHealth();
@@ -88,7 +97,7 @@ export default function SystemMonitor() {
                 <div className="admin-health-metric">
                   <span className="admin-health-label">最后心跳</span>
                   <span className="admin-health-value">
-                    {dayjs(svc.lastHeartbeat).format('HH:mm:ss')}
+                    {formatHeartbeat(svc.lastHeartbeat)}
                   </span>
                 </div>
               </div>
@@ -101,24 +110,20 @@ export default function SystemMonitor() {
       {latency && (
         <div className="admin-latency-row">
           <Card size="small" className="admin-latency-card">
-            <Statistic
-              title="Kafka Lag"
-              value={latency.kafkaLag}
-              suffix="条"
-              valueStyle={{
-                color: latency.kafkaLag > 500 ? 'var(--color-error)' : 'var(--color-success)',
-              }}
-            />
-          </Card>
-          <Card size="small" className="admin-latency-card">
-            <div className="admin-latency-label">Redis 命中率</div>
-            <Progress
-              percent={Math.round(latency.redisHitRate * 100)}
-              size="small"
-              strokeColor={
-                latency.redisHitRate > 0.9 ? 'var(--color-success)' : 'var(--color-warning)'
-              }
-            />
+            <div className="admin-latency-label">
+              <InfoTip tip="缓存命中率；命中率越高表示更多数据直接走缓存、读取更快">Redis 命中率</InfoTip>
+            </div>
+            {Number.isFinite(latency.redisHitRate) ? (
+              <Progress
+                percent={Math.round(latency.redisHitRate * 100)}
+                size="small"
+                strokeColor={
+                  latency.redisHitRate > 0.9 ? 'var(--color-success)' : 'var(--color-warning)'
+                }
+              />
+            ) : (
+              <span className="admin-latency-empty">暂无数据</span>
+            )}
           </Card>
         </div>
       )}
@@ -133,6 +138,7 @@ export default function SystemMonitor() {
         rowKey="id"
         pagination={false}
         size="small"
+        locale={{ emptyText: '暂无数据' }}
       />
     </div>
   );

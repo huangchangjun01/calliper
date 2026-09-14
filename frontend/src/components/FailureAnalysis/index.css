@@ -60,10 +60,10 @@
 }
 
 .failure-analysis th {
-  padding: var(--spacing-sm) var(--spacing-md);
-  font-size: var(--font-size-xs);
+  padding: 10px 12px;
+  font-size: var(--font-size-sm);
   font-weight: 500;
-  color: var(--text-tertiary);
+  color: var(--text-secondary);
   text-align: left;
   background: var(--bg-container);
   border-bottom: 1px solid var(--border-color);
@@ -71,7 +71,7 @@
 }
 
 .failure-analysis td {
-  padding: var(--spacing-sm) var(--spacing-md);
+  padding: 10px 12px;
   font-size: var(--font-size-sm);
   color: var(--text-primary);
   border-bottom: 1px solid var(--border-color);
@@ -142,4 +142,11 @@
   border: 1px solid;
   border-radius: var(--border-radius);
   white-space: nowrap;
+}
+
+.failure-analysis-summary {
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  white-space: normal;
+  min-width: 200px;
 }

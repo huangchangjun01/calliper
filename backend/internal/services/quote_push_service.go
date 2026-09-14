@@ -9,13 +9,14 @@ import (
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 
+	"github.com/quant-trading/backend/internal/util"
 	ws "github.com/quant-trading/backend/internal/websocket"
 )
 
 // QuotePushService handles real-time quote pushing to WebSocket clients
 // and Redis caching.
 type QuotePushService struct {
-	hub  *ws.Hub
+	hub   *ws.Hub
 	redis *redis.Client
 	tsdb  *gorm.DB
 }
@@ -37,7 +38,7 @@ func (s *QuotePushService) Start(ctx context.Context) {
 		return
 	}
 
-	go func() {
+	util.SafeGo(func() {
 		pubsub := s.redis.Subscribe(ctx, "quote:updates")
 		defer pubsub.Close()
 
@@ -61,7 +62,7 @@ func (s *QuotePushService) Start(ctx context.Context) {
 				s.PushQuote(md.Symbol, md)
 			}
 		}
-	}()
+	})
 
 	log.Println("[QuotePushService] Started")
 }

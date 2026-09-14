@@ -72,10 +72,7 @@ func (h *EvaluationHandler) GetAccuracyStats(c *gin.Context) {
 // Query params: period (short/medium/long/all), limit (default 20).
 func (h *EvaluationHandler) GetRanking(c *gin.Context) {
 	period := c.DefaultQuery("period", "all")
-	limit := 20
-	if l, err := strconv.Atoi(c.DefaultQuery("limit", "20")); err == nil && l > 0 && l <= 100 {
-		limit = l
-	}
+	limit, _, _ := parsePageLimit(c.DefaultQuery("limit", "20"), c.DefaultQuery("offset", "0"), 20)
 
 	rankings, err := h.evalService.GetAccuracyRanking(period, limit)
 	if err != nil {

@@ -2,6 +2,7 @@ package services
 
 import (
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -47,6 +48,19 @@ type MarketData struct {
 	AskVolumes     []int64   `json:"ask_volumes"`
 	Timestamp      time.Time `json:"timestamp"`
 	MarketCode     string    `json:"market_code"`
+}
+
+// normalizeSymbol strips trading-exchange suffixes from a CN stock symbol.
+// "600519.SH" -> "600519"; "000001.SZ" -> "000001"; "600519" -> "600519"
+// Only CN exchange suffixes (.SH/.SZ/.BJ) are stripped; HK/US/EU suffixes are safe.
+func normalizeSymbol(symbol string) string {
+	s := strings.ToUpper(strings.TrimSpace(symbol))
+	for _, suf := range []string{".SH", ".SZ", ".BJ"} {
+		if strings.HasSuffix(s, suf) {
+			return strings.TrimSuffix(s, suf)
+		}
+	}
+	return symbol
 }
 
 // MarketDataCollector defines the interface for fetching market data from a specific source.

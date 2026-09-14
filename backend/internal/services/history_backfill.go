@@ -2,15 +2,18 @@ package services
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"sync"
 	"time"
+
+	"github.com/quant-trading/backend/internal/util"
 )
 
 // BackfillProgress tracks the progress of a backfill operation.
 type BackfillProgress struct {
 	Symbol    string    `json:"symbol"`
-	Status    string    `json:"status"` // pending, running, completed, failed
+	Status    string    `json:"status"`   // pending, running, completed, failed
 	Progress  int       `json:"progress"` // percentage 0-100
 	Records   int       `json:"records"`
 	Error     string    `json:"error,omitempty"`
@@ -19,11 +22,24 @@ type BackfillProgress struct {
 
 // HistoryBackfill handles historical data backfill tasks.
 type HistoryBackfill struct {
-	service   *MarketDataService
-	workers   int
-	mu        sync.Mutex
-	progress  map[string]*BackfillProgress
+	service     *MarketDataService
+	workers     int
+	mu          sync.Mutex
+	progress    map[string]*BackfillProgress
 	checkpoints map[string]time.Time // symbol -> last completed timestamp
+	cancel      context.CancelFunc   // 独立后台回填上下文的取消函数，仅显式 Stop 时调用
+}
+
+// Stop cancels any running backfill. The workers observe the derived
+// background context and exit promptly. Idempotent.
+func (hb *HistoryBackfill) Stop() {
+	hb.mu.Lock()
+	defer hb.mu.Unlock()
+	if hb.cancel != nil {
+		hb.cancel()
+		hb.cancel = nil
+	}
+	log.Println("[HistoryBackfill] Backfill stopped")
 }
 
 // NewHistoryBackfill creates a new HistoryBackfill instance.
@@ -61,6 +77,18 @@ func (hb *HistoryBackfill) BackfillMinuteData(ctx context.Context, symbols []str
 
 // backfill is the core backfill logic with goroutine pool and checkpoint support.
 func (hb *HistoryBackfill) backfill(ctx context.Context, symbols []string, start, end time.Time, interval string) error {
+	// 回填一旦启动即作为后台任务运行：为它在 Background 上派生独立上下文，
+	// 不随入口 handler 的 ctx 取消，仅通过显式 Stop() 取消整个回填。
+	workerCtx, cancel := context.WithCancel(context.Background())
+	hb.mu.Lock()
+	if hb.cancel != nil {
+		hb.cancel()
+	}
+	hb.cancel = cancel
+	hb.mu.Unlock()
+
+	_ = ctx // 入口 handler 传入的 ctx 不再下发给 worker / persist
+
 	symbolsCh := make(chan string, len(symbols))
 	errCh := make(chan error, len(symbols))
 	var wg sync.WaitGroup
@@ -84,11 +112,11 @@ func (hb *HistoryBackfill) backfill(ctx context.Context, symbols []string, start
 	// Start worker pool
 	for i := 0; i < hb.workers; i++ {
 		wg.Add(1)
-		go func(workerID int) {
+		util.SafeGo(func() {
 			defer wg.Done()
 			for symbol := range symbolsCh {
 				select {
-				case <-ctx.Done():
+				case <-workerCtx.Done():
 					return
 				default:
 				}
@@ -109,8 +137,13 @@ func (hb *HistoryBackfill) backfill(ctx context.Context, symbols []string, start
 				// Determine which collector to use based on the symbol
 				collector := hb.detectCollector(symbol)
 				if collector == nil {
+					err := fmt.Errorf("[HistoryBackfill] 无可用 collector 支持 symbol %s（未启用对应市场）", symbol)
+					log.Println(err.Error())
 					hb.updateProgress(symbol, "failed", 0)
-					errCh <- nil
+					hb.mu.Lock()
+					hb.progress[symbol].Error = err.Error()
+					hb.mu.Unlock()
+					errCh <- err
 					continue
 				}
 
@@ -125,11 +158,13 @@ func (hb *HistoryBackfill) backfill(ctx context.Context, symbols []string, start
 					continue
 				}
 
-				// Clean and publish data
+				// Clean data
 				cleaned := hb.service.GetCleaner().CleanMarketData(data)
-				kafkaProd := hb.service.GetKafkaProducer()
-				if kafkaProd != nil {
-					_ = kafkaProd.PublishMarketData(ctx, cleaned)
+
+				// Persist daily records directly to TimescaleDB so backfilled
+				// history is available immediately.
+				if hb.service.persist != nil {
+					hb.service.persist.PersistDaily(workerCtx, cleaned)
 				}
 
 				// Update checkpoint
@@ -142,14 +177,14 @@ func (hb *HistoryBackfill) backfill(ctx context.Context, symbols []string, start
 				hb.updateProgress(symbol, "completed", len(data))
 				errCh <- nil
 			}
-		}(i)
+		})
 	}
 
 	// Wait for all workers to complete
-	go func() {
+	util.SafeGo(func() {
 		wg.Wait()
 		close(errCh)
-	}()
+	})
 
 	// Collect errors
 	var firstErr error

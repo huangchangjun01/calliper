@@ -6,19 +6,24 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/shopspring/decimal"
+	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 
 	"github.com/quant-trading/backend/internal/middleware"
+	"github.com/quant-trading/backend/internal/models"
 	"github.com/quant-trading/backend/internal/services"
 )
 
 // TradeHandler handles HTTP requests for trading operations.
 type TradeHandler struct {
-	tradeService *services.TradeService
+	tradeService       *services.TradeService
+	db                 *gorm.DB
+	realTradingEnabled bool
 }
 
 // NewTradeHandler creates a new TradeHandler.
-func NewTradeHandler(svc *services.TradeService) *TradeHandler {
-	return &TradeHandler{tradeService: svc}
+func NewTradeHandler(svc *services.TradeService, db *gorm.DB, realTradingEnabled bool) *TradeHandler {
+	return &TradeHandler{tradeService: svc, db: db, realTradingEnabled: realTradingEnabled}
 }
 
 // PlaceOrderRequest represents the JSON body for placing an order.
@@ -57,14 +62,43 @@ func (h *TradeHandler) PlaceOrder(c *gin.Context) {
 		return
 	}
 
+	// Verify the trade password matches the user's account password.
+	if h.db == nil {
+		fail(c, http.StatusServiceUnavailable, 50301, "trading service not available")
+		return
+	}
+	var user models.User
+	if err := h.db.First(&user, userID).Error; err != nil {
+		fail(c, http.StatusUnauthorized, 40103, "交易密码错误")
+		return
+	}
+	if bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.TradePassword)) != nil {
+		fail(c, http.StatusUnauthorized, 40103, "交易密码错误")
+		return
+	}
+
 	price, err := decimal.NewFromString(req.Price)
 	if err != nil {
 		fail(c, http.StatusBadRequest, 40003, "invalid price format")
 		return
 	}
+	if price.LessThanOrEqual(decimal.Zero) {
+		fail(c, http.StatusBadRequest, 40003, "invalid price: must be > 0")
+		return
+	}
+	if req.Quantity <= 0 {
+		fail(c, http.StatusBadRequest, 40004, "invalid quantity: must be > 0")
+		return
+	}
 
+	// is_real is never trusted from the request body. Real trading is only
+	// allowed when REAL_TRADING_ENABLED is on AND the caller is an admin.
+	isReal := false
+	if h.realTradingEnabled && middleware.GetUserRole(c) == "admin" {
+		isReal = req.IsReal
+	}
 	tradeType := "simulated"
-	if req.IsReal {
+	if isReal {
 		tradeType = "real"
 	}
 
@@ -121,8 +155,7 @@ func (h *TradeHandler) GetOrders(c *gin.Context) {
 	}
 
 	status := c.DefaultQuery("status", "all")
-	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
-	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
+	limit, offset, _ := parsePageLimit(c.DefaultQuery("limit", "20"), c.DefaultQuery("offset", "0"), 20)
 
 	userID, err := parseUserID(c)
 	if err != nil {

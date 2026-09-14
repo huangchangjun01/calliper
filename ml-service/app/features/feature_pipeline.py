@@ -4,6 +4,10 @@
 组合技术指标、市场情绪因子、基本面因子，构建完整特征集。
 支持标准化、缺失值处理、异常值处理等预处理步骤。
 """
+import json
+import os
+from datetime import datetime, timedelta
+
 import pandas as pd
 import numpy as np
 from typing import Optional
@@ -18,6 +22,8 @@ from .market_sentiment import (
     calc_turnover_signal, calc_volume_ratio, calc_vwap
 )
 from .fundamental import fetch_fundamentals, fundamentals_to_series
+from .feature_store import FeatureStore
+from ..utils.data_loader import DataLoader
 
 
 class FeaturePipeline:
@@ -27,6 +33,116 @@ class FeaturePipeline:
         self.indicators: list[str] = []       # 已计算的技术指标名称列表
         self.scalers: dict[str, StandardScaler] = {}  # 按特征名存储标准化器
         self._feature_names: list[str] = []   # 缓存的特征名称列表
+        self._data_loader: Optional[DataLoader] = None
+        self._feature_store: Optional['FeatureStore'] = None
+
+    def _get_data_loader(self) -> DataLoader:
+        """惰性创建真实数据加载器（绝不合成数据）。"""
+        if self._data_loader is None:
+            self._data_loader = DataLoader()
+        return self._data_loader
+
+    def _get_feature_store(self) -> Optional['FeatureStore']:
+        """惰性创建特征存储（无 DATABASE_URL 时为 None）。"""
+        db_url = os.getenv("DATABASE_URL", "")
+        if self._feature_store is None and db_url:
+            try:
+                self._feature_store = FeatureStore(db_url)
+            except Exception as e:
+                print(f"[FeaturePipeline] feature store init skipped: {e}")
+                self._feature_store = None
+        return self._feature_store
+
+    def compute_features(self, symbol: str, history_days: int = 120) -> dict:
+        """
+        基于真实行情为单只股票计算最新特征快照，返回 {feature_name: float}。
+
+        组合 build_features / add_fundamental_features 并从真实数据源加载 OHLCV，
+        取最新一日的特征值。无真实数据时返回空 dict（绝不合成）。
+        """
+        loader = self._get_data_loader()
+        end = datetime.now()
+        start = end - timedelta(days=history_days)
+        df = loader.load_stock_data(
+            symbol, start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d"), interval="1d"
+        )
+        if df is None or df.empty:
+            print(f"[FeaturePipeline] No real data for {symbol}, returning empty features")
+            return {}
+
+        features = self.build_features(df.copy())
+        features = self.add_fundamental_features(features, symbol)
+
+        last = features.iloc[-1]
+        result: dict = {}
+        for name, value in last.items():
+            try:
+                if pd.isna(value):
+                    result[name] = 0.0
+                else:
+                    result[name] = float(value)
+            except (TypeError, ValueError):
+                result[name] = 0.0
+
+        # 若特征存储可用，则持久化当次快照
+        store = self._get_feature_store()
+        if store is not None:
+            try:
+                idx = last.name
+                if isinstance(idx, (pd.Timestamp, np.datetime64)):
+                    trade_date = pd.Timestamp(idx).strftime("%Y-%m-%d")
+                else:
+                    trade_date = datetime.now().strftime("%Y-%m-%d")
+                store.save_features(symbol, trade_date, result)
+            except Exception as e:
+                print(f"[FeaturePipeline] feature store save skipped for {symbol}: {e}")
+
+        return result
+
+    def get_feature_history(self, symbol: str, limit: int = 10) -> list:
+        """
+        从特征存储读取历史特征记录。
+
+        返回 [{symbol, computed_at, feature_count, missing_count}]，
+        存储不可用或无记录时返回空列表。
+        """
+        store = self._get_feature_store()
+        if store is None:
+            return []
+        try:
+            from sqlalchemy import text
+            query = text("""
+                SELECT trade_date, features
+                FROM ml_features
+                WHERE symbol = :symbol
+                ORDER BY trade_date DESC
+                LIMIT :limit
+            """)
+            with store.engine.connect() as conn:
+                rows = conn.execute(query, {"symbol": symbol, "limit": limit}).fetchall()
+
+            history = []
+            for r in reversed(rows):
+                feat_data = r[1]
+                if isinstance(feat_data, str):
+                    feat_data = json.loads(feat_data)
+                missing = 0
+                for v in feat_data.values():
+                    if v is None:
+                        missing += 1
+                    elif isinstance(v, float) and v != v:
+                        missing += 1
+                date_str = pd.Timestamp(r[0]).strftime("%Y-%m-%d") if r[0] else ""
+                history.append({
+                    "symbol": symbol,
+                    "computed_at": date_str,
+                    "feature_count": len(feat_data),
+                    "missing_count": missing,
+                })
+            return history[:limit]
+        except Exception as e:
+            print(f"[FeaturePipeline] get_feature_history failed for {symbol}: {e}")
+            return []
 
     def build_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """

@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { User, LoginRequest } from '@/types';
 import { setAuthToken } from '@/services/api';
+import wsClient from '@/services/websocket';
 
 interface AuthState {
   user: User | null;
@@ -83,6 +84,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   logout: () => {
+    // 断开会话专属的 WebSocket 连接并清空订阅（disconnect 会清空 subscribedChannels）
+    try {
+      wsClient.disconnect();
+    } catch {
+      // 忽略
+    }
     try {
       localStorage.removeItem('auth_token');
       localStorage.removeItem('auth_user');

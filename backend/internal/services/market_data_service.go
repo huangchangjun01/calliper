@@ -3,21 +3,25 @@ package services
 import (
 	"context"
 	"log"
+	"os"
 	"strconv"
 	"sync"
 	"time"
 
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
+
+	"github.com/quant-trading/backend/internal/util"
 )
 
 // MarketDataService orchestrates market data collection across multiple markets.
 type MarketDataService struct {
+	db              *gorm.DB
 	tsdb            *gorm.DB
 	redis           *redis.Client
-	kafkaProd       *KafkaProducer
 	collectors      map[string]MarketDataCollector
 	cleaner         *DataCleaner
+	persist         *TSDBPersist
 	mu              sync.RWMutex
 	cancelFuncs     map[string]context.CancelFunc
 	onDataCollected func([]MarketData)
@@ -25,23 +29,14 @@ type MarketDataService struct {
 
 // MarketDataServiceConfig holds configuration for MarketDataService.
 type MarketDataServiceConfig struct {
+	DB           *gorm.DB
 	TSDB         *gorm.DB
 	Redis        *redis.Client
-	KafkaBrokers []string
 	MLServiceURL string
 }
 
 // NewMarketDataService creates a new MarketDataService.
 func NewMarketDataService(cfg MarketDataServiceConfig) *MarketDataService {
-	var kafkaProd *KafkaProducer
-	if len(cfg.KafkaBrokers) > 0 {
-		kafkaProd = NewKafkaProducer(KafkaProducerConfig{
-			Brokers: cfg.KafkaBrokers,
-		})
-	} else {
-		kafkaProd = NewKafkaProducerNoop()
-	}
-
 	// CN market: Tencent Finance as primary (East Money available as fallback
 	// when the environment has access to push2.eastmoney.com).
 	// In sandbox environments where East Money is blocked, Tencent is used directly.
@@ -54,11 +49,12 @@ func NewMarketDataService(cfg MarketDataServiceConfig) *MarketDataService {
 	}
 
 	return &MarketDataService{
+		db:          cfg.DB,
 		tsdb:        cfg.TSDB,
 		redis:       cfg.Redis,
-		kafkaProd:   kafkaProd,
 		collectors:  collectors,
 		cleaner:     NewDataCleaner(),
+		persist:     NewTSDBPersist(cfg.DB, cfg.TSDB),
 		cancelFuncs: make(map[string]context.CancelFunc),
 	}
 }
@@ -74,7 +70,7 @@ func (s *MarketDataService) StartCollection(ctx context.Context) {
 		s.cancelFuncs[marketCode] = cancel
 		s.mu.Unlock()
 
-		go s.runCollectionLoop(marketCtx, marketCode, collector)
+		util.SafeGo(func() { s.runCollectionLoop(marketCtx, marketCode, collector) })
 	}
 
 	log.Printf("[MarketDataService] Started collection for %d markets", len(s.collectors))
@@ -118,11 +114,9 @@ func (s *MarketDataService) CollectMarketDataForSymbols(ctx context.Context, mar
 	// Clean the data
 	cleaned := s.cleaner.CleanMarketData(data)
 
-	// Publish to Kafka
-	if s.kafkaProd != nil {
-		if err := s.kafkaProd.PublishMarketData(ctx, cleaned); err != nil {
-			log.Printf("[MarketDataService] Failed to publish to Kafka: %v", err)
-		}
+	// Persist directly to TimescaleDB.
+	if s.persist != nil {
+		s.persist.PersistTicks(ctx, cleaned)
 	}
 
 	// Cache latest data in Redis
@@ -143,8 +137,8 @@ func (s *MarketDataService) CollectMarketDataForSymbols(ctx context.Context, mar
 func (s *MarketDataService) runCollectionLoop(ctx context.Context, marketCode string, collector MarketDataCollector) {
 	log.Printf("[MarketDataService] Collection loop started for market: %s", marketCode)
 
-	// Collect immediately on start
-	s.CollectMarketData(ctx, marketCode)
+	// Collect immediately on start (盘外节流：非交易时段跳过)。
+	s.collectOnce(ctx, marketCode)
 
 	ticker := time.NewTicker(s.getCollectionInterval(marketCode))
 	defer ticker.Stop()
@@ -154,19 +148,37 @@ func (s *MarketDataService) runCollectionLoop(ctx context.Context, marketCode st
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			s.CollectMarketData(ctx, marketCode)
+			s.collectOnce(ctx, marketCode)
 		}
 	}
 }
 
-// getCollectionInterval returns the collection interval for a market.
-func (s *MarketDataService) getCollectionInterval(marketCode string) time.Duration {
-	switch marketCode {
-	case "CN":
-		return 30 * time.Second // A-share snapshot every 30s
-	default:
-		return 30 * time.Second
+// collectOnce performs a single collection for a market, throttling when the
+// market is outside trading hours (skip polling to avoid wasteful requests).
+func (s *MarketDataService) collectOnce(ctx context.Context, marketCode string) {
+	if !s.isTradingHours(marketCode) {
+		// 盘外：行情基本不变化，跳过本轮采集以节流。
+		return
 	}
+	s.CollectMarketData(ctx, marketCode)
+}
+
+// getCollectionInterval returns the collection interval for a market.
+// The interval is configurable via the MARKET_COLLECT_INTERVAL_SEC
+// environment variable (default 5s).
+func (s *MarketDataService) getCollectionInterval(marketCode string) time.Duration {
+	if v := os.Getenv("MARKET_COLLECT_INTERVAL_SEC"); v != "" {
+		if sec, err := strconv.Atoi(v); err == nil && sec > 0 {
+			return time.Duration(sec) * time.Second
+		}
+	}
+	return 5 * time.Second
+}
+
+// IsTradingHours exposes the trading-hour check for external callers
+// (e.g. admin health判定在盘外豁免数据陈旧告警).
+func (s *MarketDataService) IsTradingHours(marketCode string) bool {
+	return s.isTradingHours(marketCode)
 }
 
 // isTradingHours checks if the given market is currently in trading hours.
@@ -233,20 +245,37 @@ func (s *MarketDataService) isUSTradingHours() bool {
 	return (h == 9 && m >= 30) || (h >= 10 && h < 16)
 }
 
-// getDefaultSymbols returns symbols for a market, pulling from database first
-// with a hardcoded fallback list when the database is empty.
+// getDefaultSymbols returns symbols for a market, pulling the full set from the
+// stocks table (main DB) in batches with a hard cap, with a hardcoded fallback
+// list when the database is empty.
 func (s *MarketDataService) getDefaultSymbols(marketCode string) []string {
-	// Try to get symbols from database
-	if s.tsdb != nil {
+	// Try to get symbols from database (stocks live in the main DB, not the TSDB)
+	if s.db != nil {
+		const batch = 500
+		const maxSymbols = 2000 // 上限保护，避免单轮采集过载
 		var symbols []string
-		err := s.tsdb.Model(&struct {
-			Symbol string
-		}{}).
-			Table("stocks").
-			Where("is_active = ?", true).
-			Limit(5).
-			Pluck("symbol", &symbols).Error
-		if err == nil && len(symbols) > 0 {
+		for offset := 0; offset < maxSymbols; offset += batch {
+			var batchSymbols []string
+			err := s.db.Model(&struct {
+				Symbol string
+			}{}).
+				Table("stocks").
+				Where("is_active = ?", true).
+				Order("id ASC").
+				Limit(batch).Offset(offset).
+				Pluck("symbol", &batchSymbols).Error
+			if err != nil {
+				break
+			}
+			symbols = append(symbols, batchSymbols...)
+			if len(batchSymbols) < batch {
+				break // 已取完
+			}
+		}
+		if len(symbols) > maxSymbols {
+			symbols = symbols[:maxSymbols]
+		}
+		if len(symbols) > 0 {
 			return symbols
 		}
 	}
@@ -281,11 +310,6 @@ func (s *MarketDataService) cacheMarketData(ctx context.Context, marketCode stri
 		// Use Redis to cache the latest snapshot with a TTL
 		_ = s.redis.Set(ctx, key, strconv.FormatFloat(md.Price, 'f', 2, 64), 30*time.Second).Err()
 	}
-}
-
-// GetKafkaProducer returns the Kafka producer for external use.
-func (s *MarketDataService) GetKafkaProducer() *KafkaProducer {
-	return s.kafkaProd
 }
 
 // GetCollectors returns all registered collectors.

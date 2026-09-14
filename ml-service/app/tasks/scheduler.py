@@ -53,9 +53,29 @@ class TaskScheduler:
         print(f"[Scheduler] Scheduled daily prediction at {hour}:{minute}")
         return job_id
 
+    def schedule_pre_market_prediction(self, func, hour=8, minute=30):
+        """
+        盘前预测（默认 8:30）：开盘前生成最新预测，供盘中模拟交易使用。
+        与收盘预测（15:30）并存，二者都会落库 predictions 表，
+        模拟交易取每只股票最新一条，评估模块对到期预测验证，互不冲突。
+        :param func: 预测函数
+        """
+        job_id = "pre_market_prediction"
+        trigger = CronTrigger(hour=hour, minute=minute, timezone="Asia/Shanghai")
+        job = self.scheduler.add_job(
+            func,
+            trigger=trigger,
+            id=job_id,
+            name="盘前预测",
+            replace_existing=True,
+        )
+        self._jobs[job_id] = job
+        print(f"[Scheduler] Scheduled pre-market prediction at {hour}:{minute}")
+        return job_id
+
     def schedule_weekly_training(self, func, day_of_week="sat", hour=2, minute=0):
         """
-        每周重训练模型（默认周六凌晨 2:00）
+        每周全量重训练模型（默认周六凌晨 2:00，兜底长期模型与全量刷新）
         :param func: 训练函数
         """
         job_id = "weekly_training"
@@ -69,11 +89,29 @@ class TaskScheduler:
             func,
             trigger=trigger,
             id=job_id,
-            name="每周重训练",
+            name="每周全量重训练",
             replace_existing=True,
         )
         self._jobs[job_id] = job
         print(f"[Scheduler] Scheduled weekly training on {day_of_week} at {hour}:{minute}")
+        return job_id
+
+    def schedule_daily_training(self, func, hour=17, minute=0):
+        """
+        每日轻量重训练模型（默认收盘后 17:00，重训 short/medium，快速跟进最新行情）
+        :param func: 训练函数
+        """
+        job_id = "daily_training"
+        trigger = CronTrigger(hour=hour, minute=minute, timezone="Asia/Shanghai")
+        job = self.scheduler.add_job(
+            func,
+            trigger=trigger,
+            id=job_id,
+            name="每日轻量重训练",
+            replace_existing=True,
+        )
+        self._jobs[job_id] = job
+        print(f"[Scheduler] Scheduled daily training at {hour}:{minute}")
         return job_id
 
     def schedule_model_evaluation(self, func, hour=16, minute=0):

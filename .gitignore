@@ -3,6 +3,7 @@ __pycache__/
 *.pyc
 *.pyo
 .env
+.env.local
 *.log
 dist/
 build/
@@ -11,3 +12,26 @@ build/
 *.swp
 *.swo
 .DS_Store
+
+# Python venv / 模型产物
+.venv/
+.ml-models/
+mlflow.db
+versions.json
+*.pkl
+.pytest_cache/
+
+# 数据库导出/缓存
+dump.rdb
+
+# Go 编译产物
+backend/bin/
+backend/gateway
+*.exe
+*.exe~
+
+# Python 本地打包产物
+ml-service/whl/
+
+# TraeCode 会话临时数据
+*.jsonl

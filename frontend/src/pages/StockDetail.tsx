@@ -1,8 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { Spin, Descriptions, Tag } from 'antd';
 import { CaretUpOutlined, CaretDownOutlined, MinusOutlined } from '@ant-design/icons';
 import StockChart from '@/components/StockChart';
+import DataState from '@/components/common/DataState';
+import InfoTip from '@/components/common/InfoTip';
 import useStockQuote from '@/hooks/useStockQuote';
 import api from '@/services/api';
 import type { Stock, StockQuote } from '@/types';
@@ -43,7 +45,9 @@ export default function StockDetail() {
   const [stock, setStock] = useState<Stock | null>(null);
   const [loading, setLoading] = useState(true);
   const [depth, setDepth] = useState<DepthData | null>(null);
+  const [depthError, setDepthError] = useState<string | null>(null);
   const [fundamentals, setFundamentals] = useState<Fundamentals | null>(null);
+  const [fundamentalsError, setFundamentalsError] = useState<string | null>(null);
 
   const { stocks } = useStockQuote(symbol ? [symbol] : []);
   const quote: StockQuote | undefined = symbol ? stocks.get(symbol) : undefined;
@@ -70,8 +74,9 @@ export default function StockDetail() {
   }, [symbol]);
 
   // 获取盘口深度
-  useEffect(() => {
+  const loadDepth = useCallback(() => {
     if (!symbol) return;
+    setDepthError(null);
     api.get<RawDepthData>(`/market/depth/${symbol}`)
       .then((data) => {
         const mappedDepth: DepthData = {
@@ -87,41 +92,30 @@ export default function StockDetail() {
         setDepth(mappedDepth);
       })
       .catch(() => {
-        setDepth({
-          bids: [
-            { price: 1875.00, volume: 1200 },
-            { price: 1874.50, volume: 3500 },
-            { price: 1874.00, volume: 2100 },
-            { price: 1873.50, volume: 5800 },
-            { price: 1873.00, volume: 4200 },
-          ],
-          asks: [
-            { price: 1875.50, volume: 800 },
-            { price: 1876.00, volume: 2600 },
-            { price: 1876.50, volume: 1900 },
-            { price: 1877.00, volume: 4100 },
-            { price: 1877.50, volume: 3200 },
-          ],
-        });
+        setDepth(null);
+        setDepthError('盘口数据加载失败');
       });
   }, [symbol]);
 
-  // 获取基本面信息
   useEffect(() => {
+    loadDepth();
+  }, [loadDepth]);
+
+  // 获取基本面信息
+  const loadFundamentals = useCallback(() => {
     if (!symbol) return;
+    setFundamentalsError(null);
     api.get<Fundamentals>(`/market/fundamentals/${symbol}`)
       .then(setFundamentals)
       .catch(() => {
-        setFundamentals({
-          marketCap: 2.35e12,
-          pe: 28.5,
-          pb: 6.2,
-          eps: 65.8,
-          roe: 25.3,
-          dividendYield: 1.2,
-        });
+        setFundamentals(null);
+        setFundamentalsError('基本面数据加载失败');
       });
   }, [symbol]);
+
+  useEffect(() => {
+    loadFundamentals();
+  }, [loadFundamentals]);
 
   const formatNumber = (num: number, decimals = 2) => {
     if (num >= 1e12) return `${(num / 1e12).toFixed(decimals)}万亿`;
@@ -170,18 +164,22 @@ export default function StockDetail() {
         {quote && (
           <div className={`stock-detail-header-right ${changeClass}`}>
             <div className="stock-detail-price">
-              <span className="stock-detail-price-value">{quote.price.toFixed(2)}</span>
+              <InfoTip tip="最新成交价"><span className="stock-detail-price-value">{quote.price.toFixed(2)}</span></InfoTip>
             </div>
             <div className="stock-detail-change">
               <span className="stock-detail-change-icon">
                 {isUp ? <CaretUpOutlined /> : isDown ? <CaretDownOutlined /> : <MinusOutlined />}
               </span>
+              <InfoTip tip="现价 − 昨收">
               <span className="stock-detail-change-value">
                 {quote.change > 0 ? '+' : ''}{quote.change.toFixed(2)}
               </span>
+              </InfoTip>
+              <InfoTip tip="涨跌额 ÷ 昨收 × 100%">
               <span className="stock-detail-change-percent">
                 ({quote.changePercent > 0 ? '+' : ''}{quote.changePercent.toFixed(2)}%)
               </span>
+              </InfoTip>
             </div>
           </div>
         )}
@@ -194,25 +192,25 @@ export default function StockDetail() {
           <div className="stock-detail-section-title">实时行情</div>
           {quote ? (
             <Descriptions column={1} size="small" colon={false}>
-              <Descriptions.Item label="开盘价">
+              <Descriptions.Item label={<InfoTip tip="当日开盘价"><span>开盘价</span></InfoTip>}>
                 <span className="detail-value">{quote.open.toFixed(2)}</span>
               </Descriptions.Item>
-              <Descriptions.Item label="最高价">
+              <Descriptions.Item label={<InfoTip tip="当日最高 / 最低成交价"><span>最高价</span></InfoTip>}>
                 <span className="detail-value up">{quote.high.toFixed(2)}</span>
               </Descriptions.Item>
-              <Descriptions.Item label="最低价">
+              <Descriptions.Item label={<InfoTip tip="当日最高 / 最低成交价"><span>最低价</span></InfoTip>}>
                 <span className="detail-value down">{quote.low.toFixed(2)}</span>
               </Descriptions.Item>
-              <Descriptions.Item label="昨收价">
+              <Descriptions.Item label={<InfoTip tip="上一交易日收盘价"><span>昨收价</span></InfoTip>}>
                 <span className="detail-value">{quote.preClose.toFixed(2)}</span>
               </Descriptions.Item>
-              <Descriptions.Item label="成交量">
+              <Descriptions.Item label={<InfoTip tip="当日累计成交量（手）"><span>成交量</span></InfoTip>}>
                 <span className="detail-value">{formatNumber(quote.volume)}</span>
               </Descriptions.Item>
-              <Descriptions.Item label="成交额">
+              <Descriptions.Item label={<InfoTip tip="当日累计成交金额（元）"><span>成交额</span></InfoTip>}>
                 <span className="detail-value">{formatNumber(quote.amount)}</span>
               </Descriptions.Item>
-              <Descriptions.Item label="换手率">
+              <Descriptions.Item label={<span>换手率</span>}>
                 <span className="detail-value">--</span>
               </Descriptions.Item>
             </Descriptions>
@@ -234,9 +232,15 @@ export default function StockDetail() {
 
         {/* 右侧：盘口深度 */}
         <div className="stock-detail-depth">
-          <div className="stock-detail-section-title">盘口深度</div>
-          {depth ? (
-            <div className="depth-panel">
+          <div className="stock-detail-section-title"><InfoTip tip="当前委托盘实时挂单（买/卖五档）。买一为当前最高买入价，卖一为当前最低卖出价；红色为买盘、绿色为卖盘。">盘口深度</InfoTip></div>
+          <DataState
+            error={depthError}
+            onRetry={loadDepth}
+            isEmpty={!depthError && !depth}
+            emptyText="暂无盘口数据"
+          >
+            {depth && (
+              <div className="depth-panel">
               <div className="depth-asks">
                 {[...depth.asks].reverse().map((level, i) => {
                   const widthPercent = (level.volume / getMaxDepthVolume()) * 100;
@@ -275,53 +279,57 @@ export default function StockDetail() {
                 })}
               </div>
             </div>
-          ) : (
-            <div className="stock-detail-no-data">暂无盘口数据</div>
-          )}
+            )}
+          </DataState>
         </div>
       </div>
 
       {/* 底部：基本面信息 */}
       <div className="stock-detail-fundamentals">
         <div className="stock-detail-section-title">基本面信息</div>
-        {fundamentals ? (
-          <div className="fundamentals-grid">
+        <DataState
+          error={fundamentalsError}
+          onRetry={loadFundamentals}
+          isEmpty={!fundamentalsError && !fundamentals}
+          emptyText="暂无基本面数据"
+        >
+          {fundamentals && (
+            <div className="fundamentals-grid">
             <div className="fundamental-item">
               <span className="fundamental-label">总市值</span>
-              <span className="fundamental-value">{fundamentals.marketCap != null ? formatNumber(fundamentals.marketCap) : '--'}</span>
+              <InfoTip tip="总市值 = 总股本 × 最新股价"><span className="fundamental-value">{fundamentals.marketCap != null ? formatNumber(fundamentals.marketCap) : '--'}</span></InfoTip>
             </div>
             <div className="fundamental-item">
               <span className="fundamental-label">市盈率(PE)</span>
-              <span className="fundamental-value">{fundamentals.pe?.toFixed(2) ?? '--'}</span>
+              <InfoTip tip="市盈率 = 股价 ÷ 每股收益；衡量估值高低，不同行业差异较大"><span className="fundamental-value">{fundamentals.pe?.toFixed(2) ?? '--'}</span></InfoTip>
             </div>
             <div className="fundamental-item">
               <span className="fundamental-label">市净率(PB)</span>
-              <span className="fundamental-value">{fundamentals.pb?.toFixed(2) ?? '--'}</span>
+              <InfoTip tip="市净率 = 股价 ÷ 每股净资产；衡量估值，<1 常被视为破净"><span className="fundamental-value">{fundamentals.pb?.toFixed(2) ?? '--'}</span></InfoTip>
             </div>
             <div className="fundamental-item">
               <span className="fundamental-label">每股收益(EPS)</span>
-              <span className="fundamental-value">{fundamentals.eps?.toFixed(2) ?? '--'}</span>
+              <InfoTip tip="每股收益 = 净利润 ÷ 总股本"><span className="fundamental-value">{fundamentals.eps?.toFixed(2) ?? '--'}</span></InfoTip>
             </div>
             <div className="fundamental-item">
               <span className="fundamental-label">净资产收益率(ROE)</span>
-              <span className="fundamental-value">{fundamentals.roe != null ? `${fundamentals.roe.toFixed(2)}%` : '--'}</span>
+              <InfoTip tip="净资产收益率 = 净利润 ÷ 净资产 × 100%；衡量公司盈利能力"><span className="fundamental-value">{fundamentals.roe != null ? `${fundamentals.roe.toFixed(2)}%` : '--'}</span></InfoTip>
             </div>
             <div className="fundamental-item">
               <span className="fundamental-label">股息率</span>
-              <span className="fundamental-value">{fundamentals.dividendYield != null ? `${fundamentals.dividendYield.toFixed(2)}%` : '--'}</span>
+              <InfoTip tip="每股分红 ÷ 股价 × 100%；衡量现金回报"><span className="fundamental-value">{fundamentals.dividendYield != null ? `${fundamentals.dividendYield.toFixed(2)}%` : '--'}</span></InfoTip>
             </div>
             <div className="fundamental-item">
               <span className="fundamental-label">资产负债率</span>
-              <span className="fundamental-value">{fundamentals.debtRatio != null ? `${fundamentals.debtRatio.toFixed(2)}%` : '--'}</span>
+              <InfoTip tip="总负债 ÷ 总资产 × 100%"><span className="fundamental-value">{fundamentals.debtRatio != null ? `${fundamentals.debtRatio.toFixed(2)}%` : '--'}</span></InfoTip>
             </div>
             <div className="fundamental-item">
               <span className="fundamental-label">流动比率</span>
-              <span className="fundamental-value">{fundamentals.currentRatio?.toFixed(2) ?? '--'}</span>
+              <InfoTip tip="流动资产 ÷ 流动负债，衡量短期偿债能力"><span className="fundamental-value">{fundamentals.currentRatio?.toFixed(2) ?? '--'}</span></InfoTip>
             </div>
           </div>
-        ) : (
-          <div className="stock-detail-no-data">暂无基本面数据</div>
-        )}
+          )}
+        </DataState>
       </div>
     </div>
   );

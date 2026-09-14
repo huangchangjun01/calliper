@@ -1,6 +1,7 @@
-import { memo } from 'react';
+import { memo, useMemo } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import type { SidebarMenuItem } from '@/types';
+import { useAuthStore } from '@/stores/authStore';
 
 const menuItems: SidebarMenuItem[] = [
   { key: 'dashboard', label: '仪表盘', icon: '📊', path: '/' },
@@ -18,6 +19,13 @@ interface SidebarProps {
 
 const Sidebar = memo(function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const location = useLocation();
+  const role = useAuthStore((s) => s.user?.role);
+
+  // 管理后台菜单仅对 admin 角色可见
+  const visibleItems = useMemo(
+    () => (role === 'admin' ? menuItems : menuItems.filter((i) => i.key !== 'admin')),
+    [role]
+  );
 
   const isActive = (path: string) => {
     if (path === '/') {
@@ -49,7 +57,7 @@ const Sidebar = memo(function Sidebar({ collapsed, onToggle }: SidebarProps) {
 
       {/* 导航菜单 */}
       <nav className="sidebar-nav">
-        {menuItems.map((item) => (
+        {visibleItems.map((item) => (
           <NavLink
             key={item.key}
             to={item.path}

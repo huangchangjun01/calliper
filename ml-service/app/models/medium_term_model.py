@@ -114,17 +114,36 @@ class EnsemblePredictor:
         predictions = ensemble_proba.argmax(axis=-1)
         confidences = ensemble_proba.max(axis=-1)
 
+        # 基于真实当前价格计算目标价位（close 在列索引 3）
+        current_price = self._get_current_price_from_data(X)
+        target_price_map = {0: current_price * 0.98, 1: current_price * 1.00, 2: current_price * 1.02}
+
         results = []
         for i, pred in enumerate(predictions):
+            probabilities = {
+                self.LABELS[j]: round(float(ensemble_proba[i][j]), 4)
+                for j in range(len(self.LABELS))
+            }
             results.append({
                 "direction": self.LABELS[pred],
                 "confidence": round(float(confidences[i]), 4),
-                "probabilities": {
-                    self.LABELS[j]: round(float(ensemble_proba[i][j]), 4)
-                    for j in range(len(self.LABELS))
-                },
+                "target_price": round(target_price_map[pred], 2),
+                "probabilities": probabilities,
+                "factors": [
+                    {"name": k, "value": v, "description": k}
+                    for k, v in probabilities.items()
+                ],
             })
         return results
+
+    def _get_current_price_from_data(self, X):
+        """从特征数据中提取当前价格（取最后一行的 close 列，close 在列索引 3）"""
+        arr = np.asarray(X)
+        if arr.ndim == 3:
+            arr = arr[0]  # 取第一个 batch
+        if arr.ndim == 2:
+            return float(arr[-1, 3]) if arr.shape[1] > 4 else (float(arr[-1, -1]) if arr.shape[1] > 0 else 100.0)
+        return 100.0
 
     def get_feature_importance(self, top_n=20):
         """获取特征重要性（XGBoost 和 LightGBM 平均）"""

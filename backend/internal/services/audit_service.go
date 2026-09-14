@@ -27,11 +27,11 @@ func (s *AuditService) LogTrade(userID uint, action string, resource string, res
 	}
 
 	log := models.AuditLog{
-		UserID:  &userID,
-		Action:  action,
-		Resource: resource,
+		UserID:    &userID,
+		Action:    action,
+		Resource:  resource,
 		IPAddress: "127.0.0.1",
-		Details: datatypes.JSON(detailsJSON),
+		Details:   datatypes.JSON(detailsJSON),
 	}
 
 	if resourceID != "" {

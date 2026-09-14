@@ -1,10 +1,18 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Input, Select, Spin, Table } from 'antd';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Input, Select, Spin, Table, Button, Tag } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { SearchOutlined, CaretUpOutlined, CaretDownOutlined, MinusOutlined } from '@ant-design/icons';
+import {
+  SearchOutlined,
+  CaretUpOutlined,
+  CaretDownOutlined,
+  MinusOutlined,
+  PauseCircleOutlined,
+  PlayCircleOutlined,
+} from '@ant-design/icons';
 import useStockQuote from '@/hooks/useStockQuote';
 import api from '@/services/api';
+import InfoTip from '@/components/common/InfoTip';
 import type { Stock } from '@/types';
 import '@/pages/Market.css';
 
@@ -25,14 +33,38 @@ interface StockRow {
 
 export default function Market() {
   const navigate = useNavigate();
-  const [searchText, setSearchText] = useState('');
-  const [exchangeFilter, setExchangeFilter] = useState<string>('all');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [paused, setPaused] = useState(false);
   const [stockList, setStockList] = useState<Stock[]>([]);
   const [loading, setLoading] = useState(true);
   const [flashingCells, setFlashingCells] = useState<Set<string>>(new Set());
 
+  // 搜索/筛选的初值从 URL 参数恢复，保证刷新/返回后仍保持
+  const searchText = searchParams.get('q') ?? '';
+  const exchangeFilter = searchParams.get('exchange') ?? 'all';
+
+  const setSearchText = useCallback(
+    (value: string) => {
+      const next = new URLSearchParams(searchParams);
+      if (value) next.set('q', value);
+      else next.delete('q');
+      setSearchParams(next, { replace: true });
+    },
+    [searchParams, setSearchParams]
+  );
+
+  const setExchangeFilter = useCallback(
+    (value: string) => {
+      const next = new URLSearchParams(searchParams);
+      if (value && value !== 'all') next.set('exchange', value);
+      else next.delete('exchange');
+      setSearchParams(next, { replace: true });
+    },
+    [searchParams, setSearchParams]
+  );
+
   const symbols = useMemo(() => stockList.map((s) => s.symbol), [stockList]);
-  const { stocks, changedSymbols } = useStockQuote(symbols);
+  const { stocks, changedSymbols } = useStockQuote(symbols, { paused });
 
   useEffect(() => {
     api.get<{ stocks: Record<string, unknown>[]; total: number }>('/stocks/search', { limit: 200, offset: 0 })
@@ -185,7 +217,7 @@ export default function Market() {
       render: (text: string) => <span className="cell-exchange">{text}</span>,
     },
     {
-      title: '最新价',
+      title: <InfoTip tip="最新成交价">最新价</InfoTip>,
       dataIndex: 'price',
       key: 'price',
       width: 100,
@@ -194,7 +226,7 @@ export default function Market() {
       sorter: (a, b) => a.price - b.price,
     },
     {
-      title: '涨跌幅',
+      title: <InfoTip tip="涨跌额 ÷ 昨收 × 100%">涨跌幅</InfoTip>,
       dataIndex: 'changePercent',
       key: 'changePercent',
       width: 100,
@@ -203,7 +235,7 @@ export default function Market() {
       sorter: (a, b) => a.changePercent - b.changePercent,
     },
     {
-      title: '涨跌额',
+      title: <InfoTip tip="现价 − 昨收">涨跌额</InfoTip>,
       dataIndex: 'change',
       key: 'change',
       width: 100,
@@ -212,7 +244,7 @@ export default function Market() {
       sorter: (a, b) => a.change - b.change,
     },
     {
-      title: '成交量',
+      title: <InfoTip tip="当日累计成交量（手）">成交量</InfoTip>,
       dataIndex: 'volume',
       key: 'volume',
       width: 100,
@@ -221,7 +253,7 @@ export default function Market() {
       sorter: (a, b) => a.volume - b.volume,
     },
     {
-      title: '成交额',
+      title: <InfoTip tip="当日累计成交金额（元）">成交额</InfoTip>,
       dataIndex: 'amount',
       key: 'amount',
       width: 100,
@@ -230,7 +262,7 @@ export default function Market() {
       sorter: (a, b) => a.amount - b.amount,
     },
     {
-      title: '最高',
+      title: <InfoTip tip="当日最高 / 最低成交价">最高</InfoTip>,
       dataIndex: 'high',
       key: 'high',
       width: 90,
@@ -239,7 +271,7 @@ export default function Market() {
         val ? <span className="cell-high">{val.toFixed(2)}</span> : <span className="cell-na">--</span>,
     },
     {
-      title: '最低',
+      title: <InfoTip tip="当日最高 / 最低成交价">最低</InfoTip>,
       dataIndex: 'low',
       key: 'low',
       width: 90,
@@ -276,6 +308,13 @@ export default function Market() {
               ...exchanges.map((ex) => ({ value: ex, label: ex })),
             ]}
           />
+          <Button
+            icon={paused ? <PlayCircleOutlined /> : <PauseCircleOutlined />}
+            onClick={() => setPaused((p) => !p)}
+          >
+            {paused ? '恢复刷新' : '暂停刷新'}
+          </Button>
+          {paused && <Tag color="orange">已暂停</Tag>}
         </div>
       </div>
 

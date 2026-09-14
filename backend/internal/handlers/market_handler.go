@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"io"
 	"log"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"golang.org/x/text/transform"
 
 	"github.com/quant-trading/backend/internal/services"
+	"github.com/quant-trading/backend/internal/util"
 )
 
 // MarketHandler handles market data HTTP requests.
@@ -43,7 +45,8 @@ func (h *MarketHandler) GetRealtime(c *gin.Context) {
 
 	data, err := h.marketService.CollectMarketDataForSymbols(c.Request.Context(), marketCode, []string{symbol})
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch market data: " + err.Error()})
+		log.Printf("[Market] failed to fetch market data: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch market data"})
 		return
 	}
 
@@ -67,7 +70,8 @@ type BatchRealtimeRequest struct {
 func (h *MarketHandler) GetRealtimeBatch(c *gin.Context) {
 	var req BatchRealtimeRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: " + err.Error()})
+		log.Printf("[Market] invalid batch request: %v", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
 		return
 	}
 
@@ -87,7 +91,8 @@ func (h *MarketHandler) GetRealtimeBatch(c *gin.Context) {
 	for code, symbols := range marketGroups {
 		data, err := h.marketService.CollectMarketDataForSymbols(c.Request.Context(), code, symbols)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch market data for " + code + ": " + err.Error()})
+			log.Printf("[Market] failed to fetch market data for %s: %v", code, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch market data"})
 			return
 		}
 		allData = append(allData, data...)
@@ -142,6 +147,12 @@ func (h *MarketHandler) GetKline(c *gin.Context) {
 		to = parsed
 	}
 
+	// Reject an inverted range before hitting the data sources.
+	if from.After(to) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "from cannot be later than to"})
+		return
+	}
+
 	// Determine collector
 	collectors := h.marketService.GetCollectors()
 	marketCode := h.detectMarketCode(symbol)
@@ -153,12 +164,18 @@ func (h *MarketHandler) GetKline(c *gin.Context) {
 
 	data, err := collector.FetchHistoricalData(symbol, from, to, interval)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch kline data: " + err.Error()})
+		log.Printf("[Market] failed to fetch kline data: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch kline data"})
 		return
 	}
 
 	// Clean the data
 	cleaned := h.marketService.GetCleaner().CleanMarketData(data)
+	// A successful fetch with no data for the requested window is a valid,
+	// empty result (not an error): expose it as an empty array.
+	if cleaned == nil {
+		cleaned = []services.MarketData{}
+	}
 
 	success(c, gin.H{
 		"symbol":   symbol,
@@ -180,9 +197,10 @@ func (h *MarketHandler) GetDepth(c *gin.Context) {
 	}
 
 	marketCode := h.detectMarketCode(symbol)
-	data, err := h.marketService.CollectMarketData(c.Request.Context(), marketCode)
+	data, err := h.marketService.CollectMarketDataForSymbols(c.Request.Context(), marketCode, []string{symbol})
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch depth data: " + err.Error()})
+		log.Printf("[Market] failed to fetch depth data: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch depth data"})
 		return
 	}
 
@@ -216,7 +234,8 @@ type BackfillRequest struct {
 func (h *MarketHandler) TriggerBackfill(c *gin.Context) {
 	var req BackfillRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: " + err.Error()})
+		log.Printf("[Market] invalid backfill request: %v", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
 		return
 	}
 
@@ -228,21 +247,28 @@ func (h *MarketHandler) TriggerBackfill(c *gin.Context) {
 		req.Months = 6
 	}
 
-	// Run backfill in background
-	go func() {
+	// Run backfill in background.
+	// IMPORTANT: do NOT use c.Request.Context() here — it is cancelled when the
+	// HTTP response is sent, which aborts backfill persistence (data would be
+	// fetched but never written to TSDB). Use an independent background context.
+	// The timeout (30min) bounds the task; do NOT defer-cancel here, otherwise
+	// the context is cancelled when this handler returns and workers abort.
+	bgCtx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	util.SafeGo(func() {
+		defer cancel() // release the context/timer once the background worker finishes
 		var err error
 		switch req.DataType {
 		case "daily":
-			err = h.backfill.BackfillDailyData(c.Request.Context(), req.Symbols, req.Years)
+			err = h.backfill.BackfillDailyData(bgCtx, req.Symbols, req.Years)
 		case "minute":
-			err = h.backfill.BackfillMinuteData(c.Request.Context(), req.Symbols, req.Months)
+			err = h.backfill.BackfillMinuteData(bgCtx, req.Symbols, req.Months)
 		default:
-			err = h.backfill.BackfillDailyData(c.Request.Context(), req.Symbols, req.Years)
+			err = h.backfill.BackfillDailyData(bgCtx, req.Symbols, req.Years)
 		}
 		if err != nil {
 			// Error already logged in backfill
 		}
-	}()
+	})
 
 	c.JSON(http.StatusAccepted, gin.H{
 		"message":   "backfill task started",
@@ -416,7 +442,7 @@ func (h *MarketHandler) fetchSinaIndices(indices []indexDef) []IndexData {
 		if eqIdx < 0 {
 			continue
 		}
-		sinaKey := line[:eqIdx]                         // var hq_str_sh000001
+		sinaKey := line[:eqIdx]                              // var hq_str_sh000001
 		sinaKey = strings.TrimPrefix(sinaKey, "var hq_str_") // sh000001
 		quoteStart := strings.Index(line, "\"")
 		quoteEnd := strings.LastIndex(line, "\"")

@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"net/http"
-	"strconv"
 
 	"github.com/gin-gonic/gin"
 
@@ -27,20 +26,8 @@ func NewSimTradeHandler(simTradeService *services.SimTradeService, accountServic
 
 // GetStatus handles GET /api/v1/trading/sim/status
 func (h *SimTradeHandler) GetStatus(c *gin.Context) {
-	isRunning := h.simTradeService.IsRunning()
-	tradeCount := h.simTradeService.GetTodayTradeCount()
-
-	account, err := h.accountService.GetAccount()
-	var todayPnL float64
-	if err == nil {
-		todayPnL = account.TodayPnL
-	}
-
-	success(c, gin.H{
-		"is_running":        isRunning,
-		"today_trade_count": tradeCount,
-		"today_pnl":         todayPnL,
-	})
+	status := h.simTradeService.GetStatus(c.Request.Context())
+	success(c, status)
 }
 
 // StartSimTrading handles POST /api/v1/trading/sim/start
@@ -65,9 +52,19 @@ func (h *SimTradeHandler) StopSimTrading(c *gin.Context) {
 	success(c, gin.H{"message": "模拟交易已停止"})
 }
 
+// TriggerSimTrading handles POST /api/v1/trading/sim/trigger
+// 手动触发一轮决策周期（便于演示与联调）。
+func (h *SimTradeHandler) TriggerSimTrading(c *gin.Context) {
+	if !h.simTradeService.TriggerDecisionCycle(c.Request.Context()) {
+		success(c, gin.H{"message": "非交易时段，已跳过本轮模拟交易决策"})
+		return
+	}
+	success(c, gin.H{"message": "已触发一轮模拟交易决策"})
+}
+
 // GetDecisions handles GET /api/v1/trading/sim/decisions
 func (h *SimTradeHandler) GetDecisions(c *gin.Context) {
-	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
+	limit, _, _ := parsePageLimit(c.DefaultQuery("limit", "50"), c.DefaultQuery("offset", "0"), 50)
 
 	trades, err := h.simTradeService.GetLatestDecisions(c.Request.Context(), limit)
 	if err != nil {
@@ -108,8 +105,7 @@ func (h *SimTradeHandler) GetPositions(c *gin.Context) {
 
 // GetTrades handles GET /api/v1/trading/sim/trades
 func (h *SimTradeHandler) GetTrades(c *gin.Context) {
-	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
-	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
+	limit, offset, _ := parsePageLimit(c.DefaultQuery("limit", "20"), c.DefaultQuery("offset", "0"), 20)
 
 	trades, total, err := h.simTradeService.GetSimTrades(c.Request.Context(), limit, offset)
 	if err != nil {
@@ -122,5 +118,48 @@ func (h *SimTradeHandler) GetTrades(c *gin.Context) {
 		"total":  total,
 		"limit":  limit,
 		"offset": offset,
+	})
+}
+
+// GetHistoryDates handles GET /api/v1/trading/sim/history/dates
+// 返回存在模拟交易记录的日期列表（YYYY-MM-DD，倒序），用于历史决策弹框选择。
+func (h *SimTradeHandler) GetHistoryDates(c *gin.Context) {
+	dates, err := h.simTradeService.GetDecisionDates(c.Request.Context())
+	if err != nil {
+		fail(c, http.StatusInternalServerError, 50001, err.Error())
+		return
+	}
+
+	success(c, gin.H{
+		"dates": dates,
+		"total": len(dates),
+	})
+}
+
+// GetHistoryByDate handles GET /api/v1/trading/sim/history?date=YYYY-MM-DD
+// 返回指定日期的模拟交易决策记录（复用 tradeToView 视图转换）。
+func (h *SimTradeHandler) GetHistoryByDate(c *gin.Context) {
+	date := c.Query("date")
+	if date == "" {
+		fail(c, http.StatusBadRequest, 40001, "date 参数不能为空（格式 YYYY-MM-DD）")
+		return
+	}
+
+	trades, err := h.simTradeService.GetTradesByDate(c.Request.Context(), date)
+	if err != nil {
+		fail(c, http.StatusInternalServerError, 50001, err.Error())
+		return
+	}
+
+	records := make([]services.SimRecordView, 0, len(trades))
+	for _, t := range trades {
+		_, record := h.simTradeService.ToRecordView(t)
+		records = append(records, record)
+	}
+
+	success(c, gin.H{
+		"date":    date,
+		"records": records,
+		"total":   len(records),
 	})
 }

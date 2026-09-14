@@ -1,0 +1,4 @@
+bin
+gateway
+*.env*
+.git

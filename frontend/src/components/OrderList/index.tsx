@@ -1,7 +1,8 @@
 import { useState, useMemo } from 'react';
-import { Table, Tag, Button, Radio, message } from 'antd';
+import { Table, Tag, Button, Radio, message, Modal } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import type { Order, OrderStatus } from '@/types';
+import InfoTip from '@/components/common/InfoTip';
 import dayjs from 'dayjs';
 
 interface OrderListProps {
@@ -47,12 +48,23 @@ export default function OrderList({ orders, loading, onCancelOrder }: OrderListP
 
   const handleCancel = async (orderId: string) => {
     if (!onCancelOrder) return;
-    try {
-      await onCancelOrder(orderId);
-      message.success('撤单成功');
-    } catch {
-      message.error('撤单失败');
-    }
+    // 撤单属于资金相关操作，增加二次确认，防止误触
+    Modal.confirm({
+      title: '确认撤单',
+      content: '撤单后未成交部分将不再撮合，确定要撤销该笔订单吗？',
+      okText: '确认撤单',
+      cancelText: '取消',
+      okButtonProps: { danger: true },
+      centered: true,
+      onOk: async () => {
+        try {
+          await onCancelOrder(orderId);
+          message.success('撤单成功');
+        } catch {
+          message.error('撤单失败');
+        }
+      },
+    });
   };
 
   const columns: ColumnsType<Order> = [
@@ -88,7 +100,7 @@ export default function OrderList({ orders, loading, onCancelOrder }: OrderListP
       render: (val: string) => TYPE_MAP[val] || val,
     },
     {
-      title: '价格',
+      title: <InfoTip tip="委托价格"><span>价格</span></InfoTip>,
       dataIndex: 'price',
       key: 'price',
       width: 100,
@@ -96,14 +108,14 @@ export default function OrderList({ orders, loading, onCancelOrder }: OrderListP
       render: (val: number) => val?.toFixed(2) || '--',
     },
     {
-      title: '数量',
+      title: <InfoTip tip="委托数量"><span>数量</span></InfoTip>,
       dataIndex: 'quantity',
       key: 'quantity',
       width: 100,
       align: 'right',
     },
     {
-      title: '已成交',
+      title: <InfoTip tip="已成交的委托数量"><span>已成交</span></InfoTip>,
       dataIndex: 'filledQuantity',
       key: 'filledQuantity',
       width: 100,
@@ -111,10 +123,10 @@ export default function OrderList({ orders, loading, onCancelOrder }: OrderListP
       render: (val: number) => val || 0,
     },
     {
-      title: '状态',
+      title: <InfoTip tip="pending=待成交 / filled=已成交 / cancelled=已撤销"><span>状态</span></InfoTip>,
       dataIndex: 'status',
       key: 'status',
-      width: 100,
+      width: 110,
       render: (val: OrderStatus) => {
         const s = STATUS_MAP[val] || { label: val, color: 'default' };
         return <Tag color={s.color}>{s.label}</Tag>;

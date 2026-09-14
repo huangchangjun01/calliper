@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Spin } from 'antd';
 import { CaretUpOutlined, CaretDownOutlined, MinusOutlined } from '@ant-design/icons';
 import api from '@/services/api';
+import InfoTip from '@/components/common/InfoTip';
 import type { StockQuote } from '@/types';
 import './index.css';
 
@@ -73,7 +74,7 @@ export default function MarketOverview({ className = '' }: MarketOverviewProps) 
 
   return (
     <div className={`market-overview ${className}`}>
-      <div className="market-overview-title">市场概览</div>
+      <div className="market-overview-title"><InfoTip tip="展示上证/深证/恒生/标普/纳指等主要指数的实时行情速览。">市场概览</InfoTip></div>
       <div className="market-overview-cards">
         {indices.map((idx) => {
           const isUp = idx.change > 0;
@@ -81,7 +82,8 @@ export default function MarketOverview({ className = '' }: MarketOverviewProps) 
           const changeClass = isUp ? 'up' : isDown ? 'down' : 'flat';
 
           return (
-            <div key={idx.symbol} className="market-overview-card">
+            <InfoTip key={idx.symbol} tip="该指数的实时点位与当日涨跌幅（相对前一交易日收盘）。涨跌用红/绿标注。">
+            <div className="market-overview-card">
               <div className="market-overview-card-name">
                 {INDEX_NAMES[idx.symbol] || idx.name}
               </div>
@@ -97,6 +99,7 @@ export default function MarketOverview({ className = '' }: MarketOverviewProps) 
                 </span>
               </div>
             </div>
+            </InfoTip>
           );
         })}
       </div>

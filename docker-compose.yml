@@ -33,15 +33,15 @@ services:
     ports:
       - "5432:5432"
     environment:
-      POSTGRES_DB: quant_trading
-      POSTGRES_USER: quant
-      POSTGRES_PASSWORD: quant123
+      POSTGRES_DB: calliper_trading
+      POSTGRES_USER: calliper
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-in-production}
     networks:
       - quant-network
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U quant -d quant_trading"]
+      test: ["CMD-SHELL", "pg_isready -U calliper -d calliper_trading"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -51,15 +51,15 @@ services:
     ports:
       - "5433:5432"
     environment:
-      POSTGRES_DB: quant_tsdb
-      POSTGRES_USER: quant
-      POSTGRES_PASSWORD: quant123
+      POSTGRES_DB: calliper_tsdb
+      POSTGRES_USER: calliper
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-in-production}
     networks:
       - quant-network
     volumes:
       - timescaledb-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U quant -d quant_tsdb"]
+      test: ["CMD-SHELL", "pg_isready -U calliper -d calliper_tsdb"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -106,14 +106,14 @@ services:
     environment:
       - DB_HOST=postgres
       - DB_PORT=5432
-      - DB_USER=quant
-      - DB_PASSWORD=quant123
-      - DB_NAME=quant_trading
+      - DB_USER=calliper
+      - DB_PASSWORD=${POSTGRES_PASSWORD:-change-me-in-production}
+      - DB_NAME=calliper_trading
       - TSDB_HOST=timescaledb
       - TSDB_PORT=5432
-      - TSDB_USER=quant
-      - TSDB_PASSWORD=quant123
-      - TSDB_NAME=quant_tsdb
+      - TSDB_USER=calliper
+      - TSDB_PASSWORD=${POSTGRES_PASSWORD:-change-me-in-production}
+      - TSDB_NAME=calliper_tsdb
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - KAFKA_BROKERS=kafka:9092
@@ -121,6 +121,7 @@ services:
       - MINIO_ACCESS_KEY=minioadmin
       - MINIO_SECRET_KEY=minioadmin123
       - ML_SERVICE_URL=http://ml-service:8000
+      - ML_API_KEY=change-in-compose
     depends_on:
       postgres:
         condition: service_healthy
@@ -132,6 +133,8 @@ services:
         condition: service_started
       minio:
         condition: service_healthy
+      ml-service:
+        condition: service_healthy
     networks:
       - quant-network
 
@@ -139,20 +142,23 @@ services:
     build:
       context: ./ml-service
       dockerfile: Dockerfile
-    ports:
-      - "8000:8000"
+    # 仅内网可达：不对宿主发布 8000 端口
     environment:
-      - DB_HOST=postgres
-      - DB_PORT=5432
-      - DB_USER=quant
-      - DB_PASSWORD=quant123
-      - DB_NAME=quant_trading
+      - DATABASE_URL=postgresql://calliper:${POSTGRES_PASSWORD:-change-me-in-production}@postgres:5432/calliper_trading
+      - TSDB_URL=postgresql://calliper:${POSTGRES_PASSWORD:-change-me-in-production}@timescaledb:5432/calliper_tsdb
+      - ML_API_KEY=change-in-compose
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - KAFKA_BROKERS=kafka:9092
       - MINIO_ENDPOINT=minio:9000
       - MINIO_ACCESS_KEY=minioadmin
       - MINIO_SECRET_KEY=minioadmin123
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/models/status"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
     depends_on:
       postgres:
         condition: service_healthy
